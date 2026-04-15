@@ -5,18 +5,41 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 페이지 설정 및 다크 테마 UI 고정
+# 1. 페이지 설정 및 다크 테마 + 전용 폰트 고정
 # ==========================================
 st.set_page_config(page_title="운영 로그 대시보드 | KREAM Famous", page_icon="📊", layout="wide")
 
+# [핵심] Inter 폰트를 불러와서 전체 앱에 강제 적용합니다.
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+    /* 전체 폰트를 Inter로 통일 (숫자 폰트와 동일한 느낌) */
+    html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, span, div, label {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    }
+
     .stApp { background-color: #0E1117; }
-    h1, h2, h3, h4, p, span, div, label, .stMarkdown { color: #FAFAFA !important; }
-    [data-testid="stMetricValue"] { color: #00D4FF !important; font-weight: 800; }
-    [data-testid="stMetricLabel"] { color: #A0A0A0 !important; }
-    .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; padding: 10px 20px; }
+    
+    /* 텍스트 색상 및 가독성 고정 */
+    h1, h2, h3, h4, .stMarkdown p { color: #FAFAFA !important; }
+    
+    /* 메인 지표(Metric) 숫자 강조 */
+    [data-testid="stMetricValue"] { 
+        color: #00D4FF !important; 
+        font-weight: 800 !important; 
+        font-family: 'Inter', sans-serif !important;
+    }
+    
+    [data-testid="stMetricLabel"] { 
+        color: #A0A0A0 !important; 
+        font-weight: 600 !important;
+    }
+    
+    /* 탭(Tabs) 디자인 */
+    .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; }
     .stTabs [aria-selected="true"] { color: #00D4FF !important; border-bottom: 2px solid #00D4FF !important; }
+    
     .stDataFrame { border: 1px solid #30363D; border-radius: 8px; }
     .streamlit-expanderHeader { background-color: #161B22 !important; border: 1px solid #30363D !important; color: #FFFFFF !important; }
     hr { border-color: #30363D !important; }
@@ -24,7 +47,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 데이터 로드 및 전처리 (공백 제거 강화)
+# 2. 데이터 로드 및 전처리 (5인 체제)
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
@@ -46,11 +69,8 @@ def load_data(url):
         df['등록 요청일자'] = pd.to_datetime(df['등록 요청일자'], errors='coerce')
         df['Month'] = df['등록 요청일자'].dt.strftime('%Y-%m')
         df['SKU'] = pd.to_numeric(df['SKU'], errors='coerce').fillna(0).astype(int)
-        
-        # 🌟 핵심: 담당자 이름 및 주차 데이터의 공백을 강제로 제거하여 데이터 누락 방지
         df['리스트업 담당자'] = df['리스트업 담당자'].astype(str).str.strip()
         df['주차'] = df['주차'].astype(str).str.strip()
-        
         return df[df['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
     except Exception as e:
         st.error(f"데이터 로드 실패: {e}")
@@ -62,7 +82,7 @@ if df.empty: st.stop()
 # ==========================================
 # 3. 최상단: 통합 성과 (Executive Summary)
 # ==========================================
-st.title("📊 신규 상품등록 OPS Dashboard")
+st.title("📊 리스트업 운영 그룹 Dashboard")
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
 
@@ -85,7 +105,6 @@ def render_team_summary(target_df, label):
         st.info(f"{label} 데이터가 없습니다.")
         return
     st.metric(f"{label} 총 SKU 합계", f"{target_df['SKU'].sum():,} 개")
-    
     col1, col2 = st.columns(2)
     with col1:
         fig_pie = px.pie(target_df.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
@@ -121,10 +140,8 @@ for i, manager in enumerate(TARGET_MANAGERS):
         m_tab_w, m_tab_m, m_tab_d = st.tabs(["주간", "월", "일"])
         
         def render_m_tab(m_target_df, p_label):
-            # 대소문자 및 공백 무시 필터링
             m_data = m_target_df[m_target_df['리스트업 담당자'] == manager]
             s_sum = m_data['SKU'].sum() if not m_data.empty else 0
-            
             if s_sum > 0:
                 st.metric(f"{p_label} 실적", f"{s_sum:,}")
                 b_sum = m_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False)
@@ -153,13 +170,14 @@ for manager in TARGET_MANAGERS:
         c1.metric("기간 SKU", "-")
         c2.metric("브랜드 수", "-")
         c3.metric("팀 내 기여도", "-")
-        st.info(f"{manager}님의 누적 작업 데이터가 아직 존재하지 않습니다.")
+        st.info(f"{manager}님의 누적 작업 데이터가 아직 없습니다.")
         st.markdown("---")
         continue
 
     p_choice = st.radio("범위 선택:", ["전체 누적", f"{target_month} 월간", f"{target_week} 주간", f"{selected_date} 일간"], horizontal=True, key=f"r_{manager}")
     
     f_df = m_df.copy()
+    team_total = 0
     if "월간" in p_choice: 
         f_df = m_df[m_df['Month'] == target_month]
         team_total = df_month['SKU'].sum()
@@ -181,7 +199,6 @@ for manager in TARGET_MANAGERS:
         st.markdown("---")
         continue
 
-    # 기여도 계산 (해당 기간 팀 합계 대비 개인 실적)
     contrib_str = f"{(f_df['SKU'].sum() / team_total * 100):.1f}%" if team_total > 0 else "0.0%"
 
     c1, c2, c3 = st.columns(3)
