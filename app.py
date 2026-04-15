@@ -62,7 +62,7 @@ if df.empty: st.stop()
 # ==========================================
 # 3. 최상단: 통합 성과 (Executive Summary)
 # ==========================================
-st.title("📊 리스트업 운영 그룹 Dashboard")
+st.title("📊 신규 상품등록 OPS Dashboard")
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
 
