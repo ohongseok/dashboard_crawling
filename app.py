@@ -13,13 +13,10 @@ st.markdown("""
     <style>
     .stApp { background-color: #0E1117; }
     h1, h2, h3, h4, p, span, div, label, .stMarkdown { color: #FAFAFA !important; }
-    
     [data-testid="stMetricValue"] { color: #00D4FF !important; font-weight: 800; }
     [data-testid="stMetricLabel"] { color: #A0A0A0 !important; }
-    
     .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; padding: 10px 20px; }
     .stTabs [aria-selected="true"] { color: #00D4FF !important; border-bottom: 2px solid #00D4FF !important; }
-    
     .stDataFrame { border: 1px solid #30363D; border-radius: 8px; }
     .streamlit-expanderHeader { background-color: #161B22 !important; border: 1px solid #30363D !important; color: #FFFFFF !important; }
     hr { border-color: #30363D !important; }
@@ -27,18 +24,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 데이터 로드 및 5인 체제 전처리
+# 2. 데이터 로드 및 전처리 (공백 제거 강화)
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
 
-# 5명의 고유 색상 매핑 (차트 동기화용)
 COLOR_MAP = {
-    '전현희': '#00D4FF', # 스카이블루
-    '유지윤': '#B554FF', # 퍼플
-    '손영우': '#00FFA3', # 네온그린
-    '고희영': '#FF5482', # 핑크레드
-    '오홍석': '#FFD166'  # 옐로우
+    '전현희': '#00D4FF', '유지윤': '#B554FF', '손영우': '#00FFA3',
+    '고희영': '#FF5482', '오홍석': '#FFD166'
 }
 
 def hex_to_rgba(hex_str, opacity=0.2):
@@ -53,7 +46,11 @@ def load_data(url):
         df['등록 요청일자'] = pd.to_datetime(df['등록 요청일자'], errors='coerce')
         df['Month'] = df['등록 요청일자'].dt.strftime('%Y-%m')
         df['SKU'] = pd.to_numeric(df['SKU'], errors='coerce').fillna(0).astype(int)
+        
+        # 🌟 핵심: 담당자 이름 및 주차 데이터의 공백을 강제로 제거하여 데이터 누락 방지
+        df['리스트업 담당자'] = df['리스트업 담당자'].astype(str).str.strip()
         df['주차'] = df['주차'].astype(str).str.strip()
+        
         return df[df['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
     except Exception as e:
         st.error(f"데이터 로드 실패: {e}")
@@ -91,17 +88,15 @@ def render_team_summary(target_df, label):
     
     col1, col2 = st.columns(2)
     with col1:
-        # 1. 인원별 기여도 (도넛 차트)
         fig_pie = px.pie(target_df.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
                          values='SKU', names='리스트업 담당자', hole=0.4, template='plotly_dark',
                          color='리스트업 담당자', color_discrete_map=COLOR_MAP, title=f"{label} 기여도")
+        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig_pie, use_container_width=True)
     with col2:
-        # 2. 상위 브랜드 (담당자별 누적 막대 차트 - 요청사항 반영)
         top_brands = target_df.groupby('브랜드')['SKU'].sum().nlargest(7).index
         top_df = target_df[target_df['브랜드'].isin(top_brands)]
         bar_data = top_df.groupby(['브랜드', '리스트업 담당자'])['SKU'].sum().reset_index()
-        
         fig_bar = px.bar(bar_data, y='브랜드', x='SKU', color='리스트업 담당자', 
                          orientation='h', template='plotly_dark', title=f"{label} 탑 브랜드 (담당자별)",
                          color_discrete_map=COLOR_MAP)
@@ -115,10 +110,9 @@ with t_tab_d: render_team_summary(df_day, "일간")
 st.markdown("---")
 
 # ==========================================
-# 4. 5인 체제 실시간 현황 (Live Tracker)
+# 4. 5인 체제 실시간 현황
 # ==========================================
 st.markdown("### ⚡ 인원별 실시간 트래커")
-# 5명 배치에 맞춰 컬럼을 5개로 분할
 m_cols = st.columns(5)
 
 for i, manager in enumerate(TARGET_MANAGERS):
@@ -127,13 +121,15 @@ for i, manager in enumerate(TARGET_MANAGERS):
         m_tab_w, m_tab_m, m_tab_d = st.tabs(["주간", "월", "일"])
         
         def render_m_tab(m_target_df, p_label):
-            s_sum = m_target_df[m_target_df['리스트업 담당자'] == manager]['SKU'].sum() if not m_target_df.empty else 0
+            # 대소문자 및 공백 무시 필터링
+            m_data = m_target_df[m_target_df['리스트업 담당자'] == manager]
+            s_sum = m_data['SKU'].sum() if not m_data.empty else 0
+            
             if s_sum > 0:
                 st.metric(f"{p_label} 실적", f"{s_sum:,}")
-                b_sum = m_target_df[m_target_df['리스트업 담당자'] == manager].groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False)
+                b_sum = m_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False)
                 st.dataframe(b_sum, hide_index=True, use_container_width=True)
             else:
-                # 데이터가 없을 경우 깔끔하게 '-' 표시
                 st.metric(f"{p_label} 실적", "-")
                 st.caption("내역 없음")
         
@@ -150,16 +146,14 @@ st.markdown("## 🔍 담당자별 데이터")
 
 for manager in TARGET_MANAGERS:
     st.markdown(f"### 👤 {manager}")
-    
     m_df = df[df['리스트업 담당자'] == manager]
     
-    # 🌟 신규 인원 등 데이터가 아예 없는 경우 (-) 처리
     if m_df.empty:
         c1, c2, c3 = st.columns(3)
         c1.metric("기간 SKU", "-")
         c2.metric("브랜드 수", "-")
         c3.metric("팀 내 기여도", "-")
-        st.info("아직 누적된 작업 데이터가 없습니다.")
+        st.info(f"{manager}님의 누적 작업 데이터가 아직 존재하지 않습니다.")
         st.markdown("---")
         continue
 
@@ -178,17 +172,16 @@ for manager in TARGET_MANAGERS:
     else: 
         team_total = df['SKU'].sum()
 
-    # 특정 기간에 데이터가 없을 경우 (-) 처리
     if f_df.empty:
         c1, c2, c3 = st.columns(3)
         c1.metric("기간 SKU", "-")
         c2.metric("브랜드 수", "-")
         c3.metric("팀 내 기여도", "-")
-        st.info("선택하신 기간의 작업 데이터가 없습니다.")
+        st.info("선택하신 기간의 데이터가 없습니다.")
         st.markdown("---")
         continue
 
-    # 🌟 기여도 오류 수정: 선택된 기간의 개인 실적 / 선택된 기간의 팀 총 실적
+    # 기여도 계산 (해당 기간 팀 합계 대비 개인 실적)
     contrib_str = f"{(f_df['SKU'].sum() / team_total * 100):.1f}%" if team_total > 0 else "0.0%"
 
     c1, c2, c3 = st.columns(3)
@@ -203,13 +196,9 @@ for manager in TARGET_MANAGERS:
             fig = px.area(t_data, x='등록 요청일자', y='SKU', template='plotly_dark', title="처리 추이")
             fig.update_traces(line_color=COLOR_MAP[manager], fillcolor=hex_to_rgba(COLOR_MAP[manager], 0.2))
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("일간 조회 시 추이 그래프는 생략됩니다.")
     with ch2:
         b_data = f_df.groupby('브랜드')['SKU'].sum().reset_index().nlargest(5, 'SKU')
-        # 파이 차트 색상도 담당자 고유 컬러 톤 유지 (일체감 형성)
         fig = px.pie(b_data, values='SKU', names='브랜드', hole=0.4, template='plotly_dark', title="탑 브랜드")
-        fig.update_traces(marker=dict(colors=[COLOR_MAP[manager]])) # 단일 컬러 그라데이션 대신 브랜드 식별
         st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("📑 상세 로그 보기"):
