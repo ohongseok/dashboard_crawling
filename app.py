@@ -5,7 +5,7 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 페이지 설정 및 다크 테마 + 전용 폰트 고정
+# 1. 페이지 설정 및 다크 테마 + UI 버그 수정 CSS
 # ==========================================
 st.set_page_config(page_title="운영 로그 대시보드 | KREAM Famous", page_icon="📊", layout="wide")
 
@@ -13,54 +13,55 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-    /* 전체 폰트 설정 */
+    /* 1. 전체 폰트 및 배경 고정 */
     html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, span, div, label {
         font-family: 'Inter', -apple-system, sans-serif !important;
     }
     .stApp { background-color: #0E1117; }
     
-    /* 데이터 값 색상 (Pure White) */
+    /* 2. 모든 지표 및 텍스트 색상을 화이트로 통일 (Sky Blue 제거) */
     [data-testid="stMetricValue"] { 
         color: #FFFFFF !important; 
         font-weight: 800 !important;
     }
-    
     [data-testid="stMetricLabel"] { 
         color: #A0A0A0 !important; 
-        font-weight: 600 !important;
     }
+    h1, h2, h3, h4 { color: #FFFFFF !important; font-weight: 700 !important; }
     
-    /* 제목 및 텍스트 스타일 */
-    h1, h2, h3, h4 { color: #FAFAFA !important; font-weight: 700 !important; margin-bottom: 0.5rem !important; }
-    
-    /* 탭(Tabs) 디자인 */
-    .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; }
-    .stTabs [aria-selected="true"] { color: #00D4FF !important; border-bottom: 2px solid #00D4FF !important; }
-
-    /* [수정] 상세 로그(Expander) 글자 겹침 방지 가이드 */
+    /* 3. [중요] 상세 로그(Expander) 글자 겹침 해결 */
+    /* 헤더 자체의 패딩을 조절하여 아이콘과 텍스트 공간 분리 */
     .streamlit-expanderHeader {
         background-color: #161B22 !important;
         border: 1px solid #30363D !important;
         color: #FFFFFF !important;
-        padding-top: 0.5rem !important;
-        padding-bottom: 0.5rem !important;
+        padding-left: 45px !important; /* 화살표 아이콘 공간 확보 */
     }
     
-    /* 제작자 정보 텍스트 스타일 */
+    /* 화살표 아이콘 위치 및 색상 고정 (텍스트와 겹침 방지) */
+    .streamlit-expanderHeader svg {
+        left: 15px !important;
+        fill: #A0A0A0 !important;
+    }
+
+    /* 4. 제작자 정보 (성함 화이트 고정) */
     .author-text {
         text-align: right;
         color: #A0A0A0;
         font-size: 0.85rem;
         line-height: 1.4;
     }
-    .author-text b { color: #00D4FF; }
+    .author-text b { color: #FFFFFF !important; } /* 성함 화이트 변경 */
 
+    /* 5. 기타 UI 요소 */
+    .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; }
+    .stTabs [aria-selected="true"] { color: #00D4FF !important; border-bottom: 2px solid #00D4FF !important; }
     hr { border-color: #30363D !important; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 상단 헤더 섹션 (제목 + 제작자 정보 안전 배치)
+# 2. 상단 헤더 (제목 + 제작자 정보)
 # ==========================================
 header_left, header_right = st.columns([3, 1])
 
@@ -68,7 +69,6 @@ with header_left:
     st.title("📊 리스트업 운영 그룹 Dashboard")
 
 with header_right:
-    # 우측 상단에 홍석님의 정보를 안전하게 배치합니다.
     st.markdown(f"""
         <div class="author-text">
             Created & Maintained by <b>오홍석</b><br>
@@ -82,6 +82,7 @@ with header_right:
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
 
+# 차트용 컬러는 구분을 위해 유지하되 지표 텍스트는 모두 화이트로 처리됩니다.
 COLOR_MAP = {
     '전현희': '#00D4FF', '유지윤': '#B554FF', '손영우': '#00FFA3',
     '고희영': '#FF5482', '오홍석': '#FFD166'
@@ -110,7 +111,7 @@ df = load_data(CSV_URL)
 if df.empty: st.stop()
 
 # ==========================================
-# 4. 통합 성과
+# 4. 통합 성과 섹션
 # ==========================================
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
@@ -157,7 +158,7 @@ with t_tab_d: render_team_summary(df_day, "일간")
 st.markdown("---")
 
 # ==========================================
-# 5. 5인 실시간 트래커
+# 5. 인원별 실시간 트래커
 # ==========================================
 st.markdown("### ⚡ 인원별 실시간 트래커")
 m_cols = st.columns(5)
@@ -246,7 +247,7 @@ for manager in TARGET_MANAGERS:
         fig = px.pie(b_data, values='SKU', names='브랜드', hole=0.4, template='plotly_dark', title="탑 브랜드")
         st.plotly_chart(fig, use_container_width=True)
 
-    # 🌟 [수정된 부분] 상세 데이터 로그 보기 (겹침 현상 해결을 위해 Padding 및 제목 조정)
-    with st.expander(f"📑 {manager} 상세 운영 데이터 확인하기"):
+    # 🌟 [해결] 겹침 방지를 위해 좌측 패딩을 확보한 상세 로그 섹션
+    with st.expander(f"📑 {manager} 상세 데이터 확인"):
         st.dataframe(f_df.sort_values('등록 요청일자', ascending=False), use_container_width=True, hide_index=True)
     st.markdown("---")
