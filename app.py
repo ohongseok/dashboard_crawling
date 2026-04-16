@@ -5,7 +5,7 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 페이지 설정 및 다크 테마 UI 고정
+# 1. 페이지 설정 및 다크 테마 고정
 # ==========================================
 st.set_page_config(page_title="운영 로그 대시보드 | KREAM Famous", page_icon="📊", layout="wide")
 
@@ -52,7 +52,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 상단 헤더 (제목 + 제작자 정보)
+# 2. 상단 헤더
 # ==========================================
 header_left, header_right = st.columns([3, 1])
 with header_left:
@@ -66,7 +66,7 @@ with header_right:
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. 데이터 로드 및 전처리 (날짜 변환 강화)
+# 3. 데이터 로드 (Q~U열 매핑 및 방어 코드 강화)
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
@@ -84,38 +84,52 @@ def hex_to_rgba(hex_str, opacity=0.2):
 @st.cache_data(ttl=300)
 def load_data(url):
     try:
-        df_raw = pd.read_csv(url, header=1)
-        if '등록 요청일자' not in df_raw.columns:
+        try:
+            df_raw = pd.read_csv(url, header=1)
+            if '등록 요청일자' not in df_raw.columns and '리스트업 담당자' not in df_raw.columns:
+                df_raw = pd.read_csv(url, header=0)
+        except ValueError:
             df_raw = pd.read_csv(url, header=0)
 
         # [1] 크롤링 데이터 전처리
         df_c = df_raw.copy()
         df_c['등록 요청일자'] = pd.to_datetime(df_c['등록 요청일자'], errors='coerce')
-        df_c = df_c.dropna(subset=['등록 요청일자']) # 날짜 없는 행 제거
+        df_c = df_c.dropna(subset=['등록 요청일자'])
         df_c['Month'] = df_c['등록 요청일자'].dt.strftime('%Y-%m')
         df_c['SKU'] = pd.to_numeric(df_c['SKU'], errors='coerce').fillna(0).astype(int)
         df_c['리스트업 담당자'] = df_c['리스트업 담당자'].astype(str).str.strip()
         df_c['주차'] = df_c['주차'].astype(str).str.strip()
         df_crawl = df_c[df_c['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
 
-        # [2] 벌크작업 데이터 전처리 (Q~U열)
-        if df_raw.shape[1] >= 21:
-            df_b = df_raw.iloc[:, 16:21].copy()
-            df_b.columns = ['주차', '등록 요청일자', '브랜드', 'SKU', '리스트업 담당자']
-            df_b['등록 요청일자'] = pd.to_datetime(df_b['등록 요청일자'], errors='coerce')
-            df_b = df_b.dropna(subset=['등록 요청일자']) # 🌟 오류 원인 제거: 날짜로 변환 안되는 행 삭제
-            df_b['Month'] = df_b['등록 요청일자'].dt.strftime('%Y-%m')
-            df_b['SKU'] = pd.to_numeric(df_b['SKU'], errors='coerce').fillna(0).astype(int)
-            df_b['리스트업 담당자'] = df_b['리스트업 담당자'].astype(str).str.strip()
-            df_b['주차'] = df_b['주차'].astype(str).str.strip()
-            df_bulk = df_b[df_b['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
+        # [2] 벌크작업 데이터 전처리 (Q~U열 강제 매핑)
+        # 이미지 기준: Q(16)=주차, R(17)=요청일자, S(18)=브랜드, T(19)=수량, U(20)=담당자
+        df_b_base = pd.DataFrame(columns=['주차', '등록 요청일자', '브랜드', 'SKU', '리스트업 담당자'])
+        
+        if df_raw.shape[1] > 16:
+            bulk_slice = df_raw.iloc[:, 16:21].copy()
+            # 판다스가 빈 열을 무시해서 열 개수가 모자랄 경우를 대비해 빈 열 추가
+            for i in range(5 - bulk_slice.shape[1]):
+                bulk_slice[f'missing_{i}'] = None
+            bulk_slice.columns = df_b_base.columns
+            df_b = bulk_slice
         else:
-            df_bulk = pd.DataFrame(columns=['주차', '등록 요청일자', '브랜드', 'SKU', '리스트업 담당자', 'Month'])
+            df_b = df_b_base.copy()
+
+        df_b['등록 요청일자'] = pd.to_datetime(df_b['등록 요청일자'], errors='coerce')
+        df_b = df_b.dropna(subset=['등록 요청일자'])
+        df_b['Month'] = df_b['등록 요청일자'].dt.strftime('%Y-%m')
+        df_b['SKU'] = pd.to_numeric(df_b['SKU'], errors='coerce').fillna(0).astype(int)
+        df_b['리스트업 담당자'] = df_b['리스트업 담당자'].astype(str).str.strip()
+        df_b['주차'] = df_b['주차'].astype(str).str.strip()
+        df_bulk = df_b[df_b['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
             
         return df_crawl, df_bulk
+        
     except Exception as e:
         st.error(f"데이터 로드 실패: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        # 에러 발생 시에도 빈 데이터프레임의 컬럼 구조를 유지하여 KeyError 방지
+        empty_df = pd.DataFrame(columns=['주차', '등록 요청일자', '브랜드', 'SKU', '리스트업 담당자', 'Month'])
+        return empty_df.copy(), empty_df.copy()
 
 df_crawl, df_bulk = load_data(CSV_URL)
 if df_crawl.empty and df_bulk.empty: st.stop()
@@ -133,10 +147,10 @@ with c_date:
 target_month = selected_date.strftime('%Y-%m')
 target_week = f"{selected_date.strftime('%y')}W{selected_date.isocalendar()[1]:02d}"
 
-# 필터링 시 데이터가 있는 경우만 .dt 접근하도록 안전장치 강화
+# [🌟 핵심 버그 수정] 빈 데이터프레임 필터링 시 KeyError 원천 차단
 def filter_by_date(df, date_obj, week_str, month_str):
     if df.empty:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return df.copy(), df.copy(), df.copy() # 빈 프레임이라도 컬럼(SKU 등)을 그대로 유지
     d_w = df[df['주차'] == week_str]
     d_m = df[df['Month'] == month_str]
     d_d = df[df['등록 요청일자'].dt.date == date_obj]
@@ -150,8 +164,9 @@ t_tab_w, t_tab_m, t_tab_d = st.tabs([f"🎯 {target_week} 주차", f"📅 {targe
 
 def render_team_summary(target_df_c, target_df_b, label):
     c1, c2 = st.columns(2)
-    c1.metric(f"🔍 {label} 크롤링 총합", f"{target_df_c['SKU'].sum():,} 개")
-    c2.metric(f"📦 {label} 벌크작업 총합", f"{target_df_b['SKU'].sum():,} 개")
+    # 컬럼이 항상 유지되므로 sum() 함수 사용 시 에러 발생 안함
+    c1.metric(f"🔍 {label} 크롤링 총합", f"{target_df_c['SKU'].sum() if not target_df_c.empty else 0:,} 개")
+    c2.metric(f"📦 {label} 벌크작업 총합", f"{target_df_b['SKU'].sum() if not target_df_b.empty else 0:,} 개")
     
     if target_df_c.empty and target_df_b.empty:
         st.info("해당 기간의 작업 내역이 없습니다.")
@@ -194,7 +209,7 @@ with t_tab_d: render_team_summary(df_day_c, df_day_b, "일간")
 st.markdown("---")
 
 # ==========================================
-# 5. 인원별 실시간 트래커 (Expander 정렬 유지)
+# 5. 인원별 실시간 트래커
 # ==========================================
 st.markdown("### ⚡ 인원별 실시간 트래커")
 m_cols = st.columns(5)
@@ -277,11 +292,10 @@ for manager in TARGET_MANAGERS:
     f_df_c, f_month_c, f_day_c = filter_by_date(m_df_c, selected_date, target_week, target_month)
     f_df_b, f_month_b, f_day_b = filter_by_date(m_df_b, selected_date, target_week, target_month)
 
-    # 필터 선택에 따른 데이터 할당
-    if "월간" in p_choice: cur_c, cur_b, tot_c, tot_b = f_month_c, f_month_b, df_month_c['SKU'].sum(), df_month_b['SKU'].sum()
-    elif "주간" in p_choice: cur_c, cur_b, tot_c, tot_b = f_df_c, f_df_b, df_week_c['SKU'].sum(), df_week_b['SKU'].sum()
-    elif "일간" in p_choice: cur_c, cur_b, tot_c, tot_b = f_day_c, f_day_b, df_day_c['SKU'].sum(), df_day_b['SKU'].sum()
-    else: cur_c, cur_b, tot_c, tot_b = m_df_c, m_df_b, df_crawl['SKU'].sum(), df_bulk['SKU'].sum()
+    if "월간" in p_choice: cur_c, cur_b, tot_c, tot_b = f_month_c, f_month_b, df_month_c['SKU'].sum() if not df_month_c.empty else 0, df_month_b['SKU'].sum() if not df_month_b.empty else 0
+    elif "주간" in p_choice: cur_c, cur_b, tot_c, tot_b = f_df_c, f_df_b, df_week_c['SKU'].sum() if not df_week_c.empty else 0, df_week_b['SKU'].sum() if not df_week_b.empty else 0
+    elif "일간" in p_choice: cur_c, cur_b, tot_c, tot_b = f_day_c, f_day_b, df_day_c['SKU'].sum() if not df_day_c.empty else 0, df_day_b['SKU'].sum() if not df_day_b.empty else 0
+    else: cur_c, cur_b, tot_c, tot_b = m_df_c, m_df_b, df_crawl['SKU'].sum() if not df_crawl.empty else 0, df_bulk['SKU'].sum() if not df_bulk.empty else 0
 
     tab_c, tab_b = st.tabs(["🔍 크롤링 작업", "📦 벌크 작업"])
     with tab_c: render_deep_dive(cur_c, m_df_c, tot_c, manager, p_choice, "크롤링")
