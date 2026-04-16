@@ -71,8 +71,8 @@ with header_left:
 with header_right:
     st.markdown(f"""
         <div class="author-text">
-            Created & Maintained by <b>오홍석</b><br>
-            운영 및 유지보완 담당
+            Created by <b>오홍석</b><br>
+            운영 및 유지보완
         </div>
     """, unsafe_allow_html=True)
 
