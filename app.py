@@ -67,7 +67,7 @@ with header_right:
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. 데이터 로드 (크롤링 + 벌크 Q~U열 추출)
+# 3. 데이터 로드 (에러 방어 및 자동 감지)
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
@@ -85,9 +85,19 @@ def hex_to_rgba(hex_str, opacity=0.2):
 @st.cache_data(ttl=300)
 def load_data(url):
     try:
-        df = pd.read_csv(url, header=1)
+        try:
+            df = pd.read_csv(url, header=1)
+            if '등록 요청일자' not in df.columns and '리스트업 담당자' not in df.columns:
+                df = pd.read_csv(url, header=0)
+        except ValueError:
+            df = pd.read_csv(url, header=0)
+
+        has_required_columns = any(col in df.columns for col in ['등록 요청일자', '리스트업 담당자', '주차'])
+        if not has_required_columns:
+            st.error("🚨 **[데이터 접근 오류]** 구글 시트 게시 권한을 확인해주세요.")
+            return pd.DataFrame(), pd.DataFrame()
         
-        # [1] 기존 크롤링 데이터 전처리
+        # [1] 크롤링
         df_c = df.copy()
         df_c['등록 요청일자'] = pd.to_datetime(df_c['등록 요청일자'], errors='coerce')
         df_c['Month'] = df_c['등록 요청일자'].dt.strftime('%Y-%m')
@@ -96,10 +106,10 @@ def load_data(url):
         df_c['주차'] = df_c['주차'].astype(str).str.strip()
         df_crawl = df_c[df_c['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
 
-        # [2] 벌크작업 데이터 전처리 (Q열~U열, 인덱스 16~20)
+        # [2] 벌크
         if df.shape[1] >= 21:
             df_b = df.iloc[:, 16:21].copy()
-            df_b.dropna(how='all', inplace=True) # 완전 빈 행 제거
+            df_b.dropna(how='all', inplace=True)
             df_b.columns = ['주차', '등록 요청일자', '브랜드', 'SKU', '리스트업 담당자']
             df_b['등록 요청일자'] = pd.to_datetime(df_b['등록 요청일자'], errors='coerce')
             df_b['Month'] = df_b['등록 요청일자'].dt.strftime('%Y-%m')
@@ -119,7 +129,7 @@ df_crawl, df_bulk = load_data(CSV_URL)
 if df_crawl.empty and df_bulk.empty: st.stop()
 
 # ==========================================
-# 4. 통합 성과 (Team Performance)
+# 4. 통합 성과 (크롤링/벌크 차트 분리)
 # ==========================================
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
@@ -131,13 +141,12 @@ with c_date:
 target_month = selected_date.strftime('%Y-%m')
 target_week = f"{selected_date.strftime('%y')}W{selected_date.isocalendar()[1]:02d}"
 
-# 기간 필터링
 df_week_c, df_week_b = df_crawl[df_crawl['주차'] == target_week], df_bulk[df_bulk['주차'] == target_week]
 df_month_c, df_month_b = df_crawl[df_crawl['Month'] == target_month], df_bulk[df_bulk['Month'] == target_month]
 df_day_c, df_day_b = df_crawl[df_crawl['등록 요청일자'].dt.date == selected_date], df_bulk[df_bulk['등록 요청일자'].dt.date == selected_date]
 
 st.markdown("### 🏆 팀 통합 성과 (Team Performance)")
-t_tab_w, t_tab_m, t_tab_d = st.tabs([f"🎯 {target_week} 주차 (Main)", f"📅 {target_month} 월간", f"⚡ {selected_date} 일간"])
+t_tab_w, t_tab_m, t_tab_d = st.tabs([f"🎯 {target_week} 주차", f"📅 {target_month} 월간", f"⚡ {selected_date} 일간"])
 
 def render_team_summary(target_df_c, target_df_b, label):
     c1, c2 = st.columns(2)
@@ -148,23 +157,43 @@ def render_team_summary(target_df_c, target_df_b, label):
         st.info("해당 기간의 작업 내역이 없습니다.")
         return
 
-    # 통합 차트는 대표 작업인 '크롤링' 위주로 노출하여 복잡도를 줄임
+    # [수정] 1. 크롤링 성과 차트 (도넛 + 막대)
     if not target_df_c.empty:
+        st.markdown(f"**[🔍 {label} 크롤링 상세]**")
         col1, col2 = st.columns(2)
         with col1:
-            fig_pie = px.pie(target_df_c.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
+            fig_pie_c = px.pie(target_df_c.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
                              values='SKU', names='리스트업 담당자', hole=0.4, template='plotly_dark',
-                             color='리스트업 담당자', color_discrete_map=COLOR_MAP, title=f"{label} 기여도 (크롤링 기준)")
-            st.plotly_chart(fig_pie, use_container_width=True)
+                             color='리스트업 담당자', color_discrete_map=COLOR_MAP, title="크롤링 기여도")
+            st.plotly_chart(fig_pie_c, use_container_width=True)
         with col2:
-            top_brands = target_df_c.groupby('브랜드')['SKU'].sum().nlargest(7).index
-            top_df = target_df_c[target_df_c['브랜드'].isin(top_brands)]
-            bar_data = top_df.groupby(['브랜드', '리스트업 담당자'])['SKU'].sum().reset_index()
-            fig_bar = px.bar(bar_data, y='브랜드', x='SKU', color='리스트업 담당자', 
-                             orientation='h', template='plotly_dark', title=f"{label} 탑 브랜드",
+            top_brands_c = target_df_c.groupby('브랜드')['SKU'].sum().nlargest(7).index
+            top_df_c = target_df_c[target_df_c['브랜드'].isin(top_brands_c)]
+            bar_data_c = top_df_c.groupby(['브랜드', '리스트업 담당자'])['SKU'].sum().reset_index()
+            fig_bar_c = px.bar(bar_data_c, y='브랜드', x='SKU', color='리스트업 담당자', 
+                             orientation='h', template='plotly_dark', title="크롤링 탑 브랜드",
                              color_discrete_map=COLOR_MAP)
-            fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, barmode='stack')
-            st.plotly_chart(fig_bar, use_container_width=True)
+            fig_bar_c.update_layout(yaxis={'categoryorder':'total ascending'}, barmode='stack')
+            st.plotly_chart(fig_bar_c, use_container_width=True)
+
+    # [수정] 2. 벌크작업 성과 차트 (도넛 + 막대)
+    if not target_df_b.empty:
+        st.markdown(f"**[📦 {label} 벌크작업 상세]**")
+        col3, col4 = st.columns(2)
+        with col3:
+            fig_pie_b = px.pie(target_df_b.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
+                             values='SKU', names='리스트업 담당자', hole=0.4, template='plotly_dark',
+                             color='리스트업 담당자', color_discrete_map=COLOR_MAP, title="벌크작업 기여도")
+            st.plotly_chart(fig_pie_b, use_container_width=True)
+        with col4:
+            top_brands_b = target_df_b.groupby('브랜드')['SKU'].sum().nlargest(7).index
+            top_df_b = target_df_b[target_df_b['브랜드'].isin(top_brands_b)]
+            bar_data_b = top_df_b.groupby(['브랜드', '리스트업 담당자'])['SKU'].sum().reset_index()
+            fig_bar_b = px.bar(bar_data_b, y='브랜드', x='SKU', color='리스트업 담당자', 
+                             orientation='h', template='plotly_dark', title="벌크작업 탑 브랜드",
+                             color_discrete_map=COLOR_MAP)
+            fig_bar_b.update_layout(yaxis={'categoryorder':'total ascending'}, barmode='stack')
+            st.plotly_chart(fig_bar_b, use_container_width=True)
 
 with t_tab_w: render_team_summary(df_week_c, df_week_b, "주간")
 with t_tab_m: render_team_summary(df_month_c, df_month_b, "월간")
@@ -173,7 +202,7 @@ with t_tab_d: render_team_summary(df_day_c, df_day_b, "일간")
 st.markdown("---")
 
 # ==========================================
-# 5. 인원별 실시간 트래커 (크롤링/벌크 분리 표기)
+# 5. 인원별 실시간 트래커 (가시성/정렬 완벽 해결)
 # ==========================================
 st.markdown("### ⚡ 인원별 실시간 트래커")
 m_cols = st.columns(5)
@@ -196,19 +225,21 @@ for i, manager in enumerate(TARGET_MANAGERS):
                 st.caption("내역 없음")
                 return
 
-            # 크롤링 블록
+            # [수정] 크롤링: 세부 지표를 expander(클릭)로 숨겨 라인 정렬 확보
             if c_sum > 0:
                 st.metric("🔍 크롤링 실적", f"{c_sum:,}")
-                st.dataframe(c_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), 
-                             hide_index=True, use_container_width=True)
+                with st.expander("상세 브랜드 보기"):
+                    st.dataframe(c_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), 
+                                 hide_index=True, use_container_width=True)
             else:
                 st.metric("🔍 크롤링 실적", "-")
 
-            # 벌크 블록
+            # [수정] 벌크작업: 세부 지표를 expander(클릭)로 숨겨 라인 정렬 확보
             if b_sum > 0:
                 st.metric("📦 벌크작업 실적", f"{b_sum:,}")
-                st.dataframe(b_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), 
-                             hide_index=True, use_container_width=True)
+                with st.expander("상세 브랜드 보기"):
+                    st.dataframe(b_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), 
+                                 hide_index=True, use_container_width=True)
             else:
                 st.metric("📦 벌크작업 실적", "-")
         
@@ -258,7 +289,6 @@ def render_deep_dive(f_df, m_df, team_total, manager, p_choice, task_name):
     with st.expander(f"📑 {manager} {task_name} 상세 로그"):
         st.dataframe(f_df.sort_values('등록 요청일자', ascending=False), use_container_width=True, hide_index=True)
 
-
 for manager in TARGET_MANAGERS:
     st.markdown(f"### 👤 {manager}")
     p_choice = st.radio("범위 선택:", ["전체 누적", f"{target_month} 월간", f"{target_week} 주간", f"{selected_date} 일간"], horizontal=True, key=f"r_{manager}")
@@ -269,7 +299,6 @@ for manager in TARGET_MANAGERS:
     f_df_c, f_df_b = m_df_c.copy(), m_df_b.copy()
     team_tot_c, team_tot_b = 0, 0
     
-    # 기간별 필터 로직
     if "월간" in p_choice:
         f_df_c, f_df_b = m_df_c[m_df_c['Month'] == target_month], m_df_b[m_df_b['Month'] == target_month]
         team_tot_c, team_tot_b = df_month_c['SKU'].sum(), df_month_b['SKU'].sum()
@@ -282,7 +311,6 @@ for manager in TARGET_MANAGERS:
     else:
         team_tot_c, team_tot_b = df_crawl['SKU'].sum(), df_bulk['SKU'].sum()
 
-    # 동일한 양식으로 두 작업을 탭으로 분리
     tab_crawl, tab_bulk = st.tabs(["🔍 크롤링 작업", "📦 벌크 작업"])
     
     with tab_crawl: render_deep_dive(f_df_c, m_df_c, team_tot_c, manager, p_choice, "크롤링")
