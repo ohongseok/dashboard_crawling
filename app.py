@@ -5,7 +5,7 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 페이지 설정 및 다크 테마 + UI 버그 완벽 수정
+# 1. 페이지 설정 및 다크 테마 + 버그 수정 CSS
 # ==========================================
 st.set_page_config(page_title="운영 로그 대시보드 | KREAM Famous", page_icon="📊", layout="wide")
 
@@ -13,47 +13,55 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-    /* 1. 전체 배경 및 폰트 설정 */
-    html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, span, div, label {
+    /* 1. 전체 배경 설정 */
+    .stApp { background-color: #0E1117; }
+
+    /* 2. 폰트 설정 (아이콘 폰트 충돌 방지를 위해 :not() 사용) */
+    /* 아이콘이 들어가는 span과 i 태그는 Inter 폰트 적용에서 제외하여 'arrow_right' 텍스트 노출 차단 */
+    html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, div:not([data-testid="stIcon"]), label {
         font-family: 'Inter', -apple-system, sans-serif !important;
     }
-    .stApp { background-color: #0E1117; }
-    
-    /* 2. 모든 지표 및 텍스트 색상 화이트 고정 (Sky Blue 제거) */
+
+    /* 3. 모든 텍스트 및 지표 색상 화이트 고정 */
     [data-testid="stMetricValue"] { 
         color: #FFFFFF !important; 
         font-weight: 800 !important;
     }
-    [data-testid="stMetricLabel"] { 
-        color: #A0A0A0 !important; 
-    }
+    [data-testid="stMetricLabel"] { color: #A0A0A0 !important; }
     h1, h2, h3, h4 { color: #FFFFFF !important; font-weight: 700 !important; }
     
-    /* 3. [해결] 상세 로그(Expander) 글자 겹침 해결 */
-    /* 아이콘과 글자가 겹치지 않도록 글자 부분만 오른쪽으로 밀어냅니다. */
-    [data-testid="stExpander"] details summary p {
-        margin-left: 1.5rem !important;
-        color: #FFFFFF !important;
+    /* 4. [해결] 상세 로그(Expander) 아이콘 및 텍스트 겹침/노출 버그 수정 */
+    /* 'arrow_right' 같은 내부 텍스트 라벨을 아예 숨깁니다. */
+    .streamlit-expanderHeader span:contains("arrow_right"), 
+    .streamlit-expanderHeader [data-testid="stIcon"] {
+        display: none !important;
     }
-    
-    /* 헤더 배경색 및 테두리 정돈 */
+
+    /* 헤더 디자인: 텍스트가 왼쪽 끝으로 붙게 조정 */
     .streamlit-expanderHeader {
         background-color: #161B22 !important;
         border: 1px solid #30363D !important;
-        border-radius: 8px !important;
+        color: #FFFFFF !important;
+        padding-left: 15px !important;
+    }
+    
+    /* 확장 화살표 기호가 필요할 경우를 대비해 위치 조정 */
+    .streamlit-expanderHeader svg {
+        color: #FFFFFF !important;
+        margin-right: 10px !important;
     }
 
-    /* 4. 제작자 정보 (성함 포함 전체 화이트 고정) */
+    /* 5. 제작자 정보 (성함 포함 전체 화이트 고정) */
     .author-text {
         text-align: right;
-        color: #FFFFFF !important; /* 전체 화이트 */
+        color: #FFFFFF !important;
         font-size: 0.85rem;
         line-height: 1.4;
-        opacity: 0.8;
+        opacity: 0.9;
     }
     .author-text b { color: #FFFFFF !important; font-weight: 700; }
 
-    /* 5. 기타 UI 요소 (탭 컬러는 포인트로 유지) */
+    /* 6. 탭 디자인 */
     .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; }
     .stTabs [aria-selected="true"] { color: #00D4FF !important; border-bottom: 2px solid #00D4FF !important; }
     hr { border-color: #30363D !important; }
@@ -61,7 +69,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 상단 헤더 (제목 + 제작자 정보 안전 배치)
+# 2. 상단 헤더 (제목 + 제작자 정보)
 # ==========================================
 header_left, header_right = st.columns([3, 1])
 
@@ -69,21 +77,19 @@ with header_left:
     st.title("📊 리스트업 운영 그룹 Dashboard")
 
 with header_right:
-    # 성함을 포함한 모든 텍스트가 화이트로 표시됩니다.
     st.markdown(f"""
         <div class="author-text">
-            Created by <b>오홍석</b><br>
+            Created & Maintained by <b>오홍석</b><br>
             운영 및 유지보완 담당
         </div>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. 데이터 로드 및 전처리
+# 3. 데이터 로드 및 5인 체제 전처리
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
 
-# 차트 컬러는 인원 구분을 위해 유지합니다.
 COLOR_MAP = {
     '전현희': '#00D4FF', '유지윤': '#B554FF', '손영우': '#00FFA3',
     '고희영': '#FF5482', '오홍석': '#FFD166'
@@ -112,7 +118,7 @@ df = load_data(CSV_URL)
 if df.empty: st.stop()
 
 # ==========================================
-# 4. 통합 성과 섹션
+# 4. 통합 성과 (Executive Summary)
 # ==========================================
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
@@ -129,7 +135,7 @@ df_month = df[df['Month'] == target_month]
 df_day = df[df['등록 요청일자'].dt.date == selected_date]
 
 st.markdown("### 🏆 팀 통합 성과 (Team Performance)")
-t_tab_w, t_tab_m, t_tab_d = st.tabs([f"🎯 {target_week} 주차", f"📅 {target_month} 월간", f"⚡ {selected_date} 일간"])
+t_tab_w, t_tab_m, t_tab_d = st.tabs([f"🎯 {target_week} 주차 (Main)", f"📅 {target_month} 월간", f"⚡ {selected_date} 일간"])
 
 def render_team_summary(target_df, label):
     if target_df.empty:
@@ -200,7 +206,7 @@ for manager in TARGET_MANAGERS:
         c1.metric("기간 SKU", "-")
         c2.metric("브랜드 수", "-")
         c3.metric("팀 내 기여도", "-")
-        st.info(f"{manager}님의 데이터가 아직 없습니다.")
+        st.info("데이터가 아직 없습니다.")
         st.markdown("---")
         continue
 
@@ -248,7 +254,7 @@ for manager in TARGET_MANAGERS:
         fig = px.pie(b_data, values='SKU', names='브랜드', hole=0.4, template='plotly_dark', title="탑 브랜드")
         st.plotly_chart(fig, use_container_width=True)
 
-    # 🌟 [해결] 글자 겹침 방지를 위해 텍스트 마진을 확보한 상세 데이터 로그
+    # 🌟 [최종 해결] 텍스트 버그 차단
     with st.expander(f"📑 {manager} 상세 데이터 확인"):
         st.dataframe(f_df.sort_values('등록 요청일자', ascending=False), use_container_width=True, hide_index=True)
     st.markdown("---")
