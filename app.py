@@ -5,7 +5,7 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 페이지 설정 및 다크 테마 + 전용 폰트 고정
+# 1. 페이지 설정 및 다크 테마 UI + 제작자 배지 CSS
 # ==========================================
 st.set_page_config(page_title="운영 로그 대시보드 | KREAM Famous", page_icon="📊", layout="wide")
 
@@ -19,9 +19,27 @@ st.markdown("""
     }
     .stApp { background-color: #0E1117; }
     
-    /* [수정] 데이터 값 색상을 민트색이 아닌 기존의 밝은 화이트/스카이블루 톤으로 복구 */
+    /* [NEW] 우측 상단 제작자 정보 배지 스타일 */
+    .author-badge {
+        position: absolute;
+        top: -60px;
+        right: 0px;
+        padding: 8px 15px;
+        background-color: #161B22;
+        border: 1px solid #30363D;
+        border-radius: 8px;
+        color: #A0A0A0;
+        font-size: 0.8rem;
+        font-weight: 500;
+        text-align: right;
+        line-height: 1.4;
+        z-index: 99;
+    }
+    .author-badge b { color: #00D4FF; }
+
+    /* 데이터 값 색상 (Pure White) */
     [data-testid="stMetricValue"] { 
-        color: #FFFFFF !important; /* 가장 깔끔한 화이트로 복구 */
+        color: #FFFFFF !important; 
         font-weight: 800 !important;
         font-family: 'Inter', sans-serif !important;
     }
@@ -31,7 +49,6 @@ st.markdown("""
         font-weight: 600 !important;
     }
     
-    /* UI 디자인 요소 */
     h1, h2, h3, h4 { color: #FAFAFA !important; font-weight: 700 !important; }
     .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; }
     .stTabs [aria-selected="true"] { color: #00D4FF !important; border-bottom: 2px solid #00D4FF !important; }
@@ -39,23 +56,22 @@ st.markdown("""
     .streamlit-expanderHeader { background-color: #161B22 !important; border: 1px solid #30363D !important; color: #FFFFFF !important; }
     hr { border-color: #30363D !important; }
     </style>
+    
+    <div class="author-badge">
+        Created & Maintained by <b>오홍석</b><br>
+        운영 및 유지보완 담당
+    </div>
 """, unsafe_allow_html=True)
 
 # ==========================================
 # 2. 데이터 로드 및 5인 체제 전처리
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
-
-# [크리티컬] 5인 체제로 확장
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
 
-# 인원별 고유 컬러 매핑 (기여도 파이 = 브랜드 막대 색상 동일화)
 COLOR_MAP = {
-    '전현희': '#00D4FF', # 스카이블루
-    '유지윤': '#B554FF', # 퍼플
-    '손영우': '#00FFA3', # 네온그린
-    '고희영': '#FF5482', # 핑크레드
-    '오홍석': '#FFD166'  # 옐로우
+    '전현희': '#00D4FF', '유지윤': '#B554FF', '손영우': '#00FFA3',
+    '고희영': '#FF5482', '오홍석': '#FFD166'
 }
 
 def hex_to_rgba(hex_str, opacity=0.2):
@@ -70,7 +86,6 @@ def load_data(url):
         df['등록 요청일자'] = pd.to_datetime(df['등록 요청일자'], errors='coerce')
         df['Month'] = df['등록 요청일자'].dt.strftime('%Y-%m')
         df['SKU'] = pd.to_numeric(df['SKU'], errors='coerce').fillna(0).astype(int)
-        # 공백 제거로 데이터 누락 방지
         df['리스트업 담당자'] = df['리스트업 담당자'].astype(str).str.strip()
         df['주차'] = df['주차'].astype(str).str.strip()
         return df[df['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
@@ -82,9 +97,9 @@ df = load_data(CSV_URL)
 if df.empty: st.stop()
 
 # ==========================================
-# 3. 최상단: 통합 성과 (Executive Summary)
+# 3. 최상단: 통합 성과
 # ==========================================
-st.title("📊 신규리스트 OPS Log Dashboard")
+st.title("📊 리스트업 운영 그룹 Dashboard")
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
 
@@ -114,7 +129,6 @@ def render_team_summary(target_df, label):
                          color='리스트업 담당자', color_discrete_map=COLOR_MAP, title=f"{label} 인원별 기여도")
         st.plotly_chart(fig_pie, use_container_width=True)
     with col2:
-        # 브랜드 막대 그래프에도 인원별 컬러 적용 (Stacked Bar)
         top_brands = target_df.groupby('브랜드')['SKU'].sum().nlargest(7).index
         top_df = target_df[target_df['브랜드'].isin(top_brands)]
         bar_data = top_df.groupby(['브랜드', '리스트업 담당자'])['SKU'].sum().reset_index()
@@ -134,7 +148,7 @@ st.markdown("---")
 # 4. 인원별 실시간 트래커 (5인 체제)
 # ==========================================
 st.markdown("### ⚡ 인원별 실시간 트래커")
-m_cols = st.columns(5) # 5인 컬럼 레이아웃
+m_cols = st.columns(5)
 
 for i, manager in enumerate(TARGET_MANAGERS):
     with m_cols[i]:
@@ -201,7 +215,6 @@ for manager in TARGET_MANAGERS:
         st.markdown("---")
         continue
 
-    # [수정] 누적 기여도 산식: 해당 기간 개인 / 해당 기간 팀 전체
     contrib_str = f"{(f_df['SKU'].sum() / team_total * 100):.1f}%" if team_total > 0 else "0.0%"
 
     c1, c2, c3 = st.columns(3)
