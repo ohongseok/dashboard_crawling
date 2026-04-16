@@ -5,7 +5,7 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 페이지 설정 및 다크 테마 + 버그 수정 CSS
+# 1. 페이지 설정 및 다크 테마 + 완벽 CSS 고정
 # ==========================================
 st.set_page_config(page_title="운영 로그 대시보드 | KREAM Famous", page_icon="📊", layout="wide")
 
@@ -13,55 +13,39 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-    /* 1. 전체 배경 설정 */
-    .stApp { background-color: #0E1117; }
-
-    /* 2. 폰트 설정 (아이콘 폰트 충돌 방지를 위해 :not() 사용) */
-    /* 아이콘이 들어가는 span과 i 태그는 Inter 폰트 적용에서 제외하여 'arrow_right' 텍스트 노출 차단 */
     html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, div:not([data-testid="stIcon"]), label {
         font-family: 'Inter', -apple-system, sans-serif !important;
     }
-
-    /* 3. 모든 텍스트 및 지표 색상 화이트 고정 */
-    [data-testid="stMetricValue"] { 
-        color: #FFFFFF !important; 
-        font-weight: 800 !important;
-    }
+    .stApp { background-color: #0E1117; }
+    
+    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-weight: 800 !important; }
     [data-testid="stMetricLabel"] { color: #A0A0A0 !important; }
     h1, h2, h3, h4 { color: #FFFFFF !important; font-weight: 700 !important; }
     
-    /* 4. [해결] 상세 로그(Expander) 아이콘 및 텍스트 겹침/노출 버그 수정 */
-    /* 'arrow_right' 같은 내부 텍스트 라벨을 아예 숨깁니다. */
+    /* 텍스트 겹침 완벽 방지 */
     .streamlit-expanderHeader span:contains("arrow_right"), 
-    .streamlit-expanderHeader [data-testid="stIcon"] {
-        display: none !important;
-    }
+    .streamlit-expanderHeader [data-testid="stIcon"] { display: none !important; }
 
-    /* 헤더 디자인: 텍스트가 왼쪽 끝으로 붙게 조정 */
+    [data-testid="stExpander"] details summary p {
+        margin-left: 1.5rem !important;
+        color: #FFFFFF !important;
+    }
+    
     .streamlit-expanderHeader {
         background-color: #161B22 !important;
         border: 1px solid #30363D !important;
+        border-radius: 8px !important;
         color: #FFFFFF !important;
         padding-left: 15px !important;
     }
     
-    /* 확장 화살표 기호가 필요할 경우를 대비해 위치 조정 */
-    .streamlit-expanderHeader svg {
-        color: #FFFFFF !important;
-        margin-right: 10px !important;
-    }
+    .streamlit-expanderHeader svg { color: #FFFFFF !important; margin-right: 10px !important; }
 
-    /* 5. 제작자 정보 (성함 포함 전체 화이트 고정) */
     .author-text {
-        text-align: right;
-        color: #FFFFFF !important;
-        font-size: 0.85rem;
-        line-height: 1.4;
-        opacity: 0.9;
+        text-align: right; color: #FFFFFF !important; font-size: 0.85rem; line-height: 1.4; opacity: 0.9;
     }
     .author-text b { color: #FFFFFF !important; font-weight: 700; }
 
-    /* 6. 탭 디자인 */
     .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; }
     .stTabs [aria-selected="true"] { color: #00D4FF !important; border-bottom: 2px solid #00D4FF !important; }
     hr { border-color: #30363D !important; }
@@ -69,13 +53,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 상단 헤더 (제목 + 제작자 정보)
+# 2. 상단 헤더
 # ==========================================
 header_left, header_right = st.columns([3, 1])
-
 with header_left:
     st.title("📊 리스트업 운영 그룹 Dashboard")
-
 with header_right:
     st.markdown(f"""
         <div class="author-text">
@@ -85,7 +67,7 @@ with header_right:
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. 데이터 로드 및 5인 체제 전처리
+# 3. 데이터 로드 (크롤링 + 벌크 Q~U열 추출)
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
@@ -104,21 +86,40 @@ def hex_to_rgba(hex_str, opacity=0.2):
 def load_data(url):
     try:
         df = pd.read_csv(url, header=1)
-        df['등록 요청일자'] = pd.to_datetime(df['등록 요청일자'], errors='coerce')
-        df['Month'] = df['등록 요청일자'].dt.strftime('%Y-%m')
-        df['SKU'] = pd.to_numeric(df['SKU'], errors='coerce').fillna(0).astype(int)
-        df['리스트업 담당자'] = df['리스트업 담당자'].astype(str).str.strip()
-        df['주차'] = df['주차'].astype(str).str.strip()
-        return df[df['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
+        
+        # [1] 기존 크롤링 데이터 전처리
+        df_c = df.copy()
+        df_c['등록 요청일자'] = pd.to_datetime(df_c['등록 요청일자'], errors='coerce')
+        df_c['Month'] = df_c['등록 요청일자'].dt.strftime('%Y-%m')
+        df_c['SKU'] = pd.to_numeric(df_c['SKU'], errors='coerce').fillna(0).astype(int)
+        df_c['리스트업 담당자'] = df_c['리스트업 담당자'].astype(str).str.strip()
+        df_c['주차'] = df_c['주차'].astype(str).str.strip()
+        df_crawl = df_c[df_c['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
+
+        # [2] 벌크작업 데이터 전처리 (Q열~U열, 인덱스 16~20)
+        if df.shape[1] >= 21:
+            df_b = df.iloc[:, 16:21].copy()
+            df_b.dropna(how='all', inplace=True) # 완전 빈 행 제거
+            df_b.columns = ['주차', '등록 요청일자', '브랜드', 'SKU', '리스트업 담당자']
+            df_b['등록 요청일자'] = pd.to_datetime(df_b['등록 요청일자'], errors='coerce')
+            df_b['Month'] = df_b['등록 요청일자'].dt.strftime('%Y-%m')
+            df_b['SKU'] = pd.to_numeric(df_b['SKU'], errors='coerce').fillna(0).astype(int)
+            df_b['리스트업 담당자'] = df_b['리스트업 담당자'].astype(str).str.strip()
+            df_b['주차'] = df_b['주차'].astype(str).str.strip()
+            df_bulk = df_b[df_b['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
+        else:
+            df_bulk = pd.DataFrame(columns=['주차', '등록 요청일자', '브랜드', 'SKU', '리스트업 담당자', 'Month'])
+            
+        return df_crawl, df_bulk
     except Exception as e:
         st.error(f"데이터 로드 실패: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
-df = load_data(CSV_URL)
-if df.empty: st.stop()
+df_crawl, df_bulk = load_data(CSV_URL)
+if df_crawl.empty and df_bulk.empty: st.stop()
 
 # ==========================================
-# 4. 통합 성과 (Executive Summary)
+# 4. 통합 성과 (Team Performance)
 # ==========================================
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
@@ -130,42 +131,49 @@ with c_date:
 target_month = selected_date.strftime('%Y-%m')
 target_week = f"{selected_date.strftime('%y')}W{selected_date.isocalendar()[1]:02d}"
 
-df_week = df[df['주차'] == target_week]
-df_month = df[df['Month'] == target_month]
-df_day = df[df['등록 요청일자'].dt.date == selected_date]
+# 기간 필터링
+df_week_c, df_week_b = df_crawl[df_crawl['주차'] == target_week], df_bulk[df_bulk['주차'] == target_week]
+df_month_c, df_month_b = df_crawl[df_crawl['Month'] == target_month], df_bulk[df_bulk['Month'] == target_month]
+df_day_c, df_day_b = df_crawl[df_crawl['등록 요청일자'].dt.date == selected_date], df_bulk[df_bulk['등록 요청일자'].dt.date == selected_date]
 
 st.markdown("### 🏆 팀 통합 성과 (Team Performance)")
 t_tab_w, t_tab_m, t_tab_d = st.tabs([f"🎯 {target_week} 주차 (Main)", f"📅 {target_month} 월간", f"⚡ {selected_date} 일간"])
 
-def render_team_summary(target_df, label):
-    if target_df.empty:
-        st.info(f"{label} 데이터가 없습니다.")
+def render_team_summary(target_df_c, target_df_b, label):
+    c1, c2 = st.columns(2)
+    c1.metric(f"🔍 {label} 크롤링 총합", f"{target_df_c['SKU'].sum():,} 개")
+    c2.metric(f"📦 {label} 벌크작업 총합", f"{target_df_b['SKU'].sum():,} 개")
+    
+    if target_df_c.empty and target_df_b.empty:
+        st.info("해당 기간의 작업 내역이 없습니다.")
         return
-    st.metric(f"{label} 총 SKU 합계", f"{target_df['SKU'].sum():,} 개")
-    col1, col2 = st.columns(2)
-    with col1:
-        fig_pie = px.pie(target_df.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
-                         values='SKU', names='리스트업 담당자', hole=0.4, template='plotly_dark',
-                         color='리스트업 담당자', color_discrete_map=COLOR_MAP, title=f"{label} 기여도")
-        st.plotly_chart(fig_pie, use_container_width=True)
-    with col2:
-        top_brands = target_df.groupby('브랜드')['SKU'].sum().nlargest(7).index
-        top_df = target_df[target_df['브랜드'].isin(top_brands)]
-        bar_data = top_df.groupby(['브랜드', '리스트업 담당자'])['SKU'].sum().reset_index()
-        fig_bar = px.bar(bar_data, y='브랜드', x='SKU', color='리스트업 담당자', 
-                         orientation='h', template='plotly_dark', title=f"{label} 탑 브랜드 (인원별)",
-                         color_discrete_map=COLOR_MAP)
-        fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, barmode='stack')
-        st.plotly_chart(fig_bar, use_container_width=True)
 
-with t_tab_w: render_team_summary(df_week, "주간")
-with t_tab_m: render_team_summary(df_month, "월간")
-with t_tab_d: render_team_summary(df_day, "일간")
+    # 통합 차트는 대표 작업인 '크롤링' 위주로 노출하여 복잡도를 줄임
+    if not target_df_c.empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            fig_pie = px.pie(target_df_c.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
+                             values='SKU', names='리스트업 담당자', hole=0.4, template='plotly_dark',
+                             color='리스트업 담당자', color_discrete_map=COLOR_MAP, title=f"{label} 기여도 (크롤링 기준)")
+            st.plotly_chart(fig_pie, use_container_width=True)
+        with col2:
+            top_brands = target_df_c.groupby('브랜드')['SKU'].sum().nlargest(7).index
+            top_df = target_df_c[target_df_c['브랜드'].isin(top_brands)]
+            bar_data = top_df.groupby(['브랜드', '리스트업 담당자'])['SKU'].sum().reset_index()
+            fig_bar = px.bar(bar_data, y='브랜드', x='SKU', color='리스트업 담당자', 
+                             orientation='h', template='plotly_dark', title=f"{label} 탑 브랜드",
+                             color_discrete_map=COLOR_MAP)
+            fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, barmode='stack')
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+with t_tab_w: render_team_summary(df_week_c, df_week_b, "주간")
+with t_tab_m: render_team_summary(df_month_c, df_month_b, "월간")
+with t_tab_d: render_team_summary(df_day_c, df_day_b, "일간")
 
 st.markdown("---")
 
 # ==========================================
-# 5. 인원별 실시간 트래커
+# 5. 인원별 실시간 트래커 (크롤링/벌크 분리 표기)
 # ==========================================
 st.markdown("### ⚡ 인원별 실시간 트래커")
 m_cols = st.columns(5)
@@ -175,65 +183,58 @@ for i, manager in enumerate(TARGET_MANAGERS):
         st.markdown(f"#### 🧑‍💻 {manager}")
         m_tab_w, m_tab_m, m_tab_d = st.tabs(["주간", "월", "일"])
         
-        def render_m_tab(m_target_df, p_label):
-            m_data = m_target_df[m_target_df['리스트업 담당자'] == manager]
-            s_sum = m_data['SKU'].sum() if not m_data.empty else 0
-            if s_sum > 0:
-                st.metric(f"{p_label} 실적", f"{s_sum:,}")
-                st.dataframe(m_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), 
+        def render_m_tab(df_c, df_b, p_label):
+            c_data = df_c[df_c['리스트업 담당자'] == manager]
+            b_data = df_b[df_b['리스트업 담당자'] == manager]
+            
+            c_sum = c_data['SKU'].sum() if not c_data.empty else 0
+            b_sum = b_data['SKU'].sum() if not b_data.empty else 0
+            
+            if c_sum == 0 and b_sum == 0:
+                st.metric("🔍 크롤링 실적", "-")
+                st.metric("📦 벌크작업 실적", "-")
+                st.caption("내역 없음")
+                return
+
+            # 크롤링 블록
+            if c_sum > 0:
+                st.metric("🔍 크롤링 실적", f"{c_sum:,}")
+                st.dataframe(c_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), 
                              hide_index=True, use_container_width=True)
             else:
-                st.metric(f"{p_label} 실적", "-")
-                st.caption("내역 없음")
+                st.metric("🔍 크롤링 실적", "-")
+
+            # 벌크 블록
+            if b_sum > 0:
+                st.metric("📦 벌크작업 실적", f"{b_sum:,}")
+                st.dataframe(b_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), 
+                             hide_index=True, use_container_width=True)
+            else:
+                st.metric("📦 벌크작업 실적", "-")
         
-        with m_tab_w: render_m_tab(df_week, "주간")
-        with m_tab_m: render_m_tab(df_month, "월간")
-        with m_tab_d: render_m_tab(df_day, "일간")
+        with m_tab_w: render_m_tab(df_week_c, df_week_b, "주간")
+        with m_tab_m: render_m_tab(df_month_c, df_month_b, "월간")
+        with m_tab_d: render_m_tab(df_day_c, df_day_b, "일간")
 
 st.markdown("---")
 
 # ==========================================
-# 6. 담당자별 데이터 (Deep Dive)
+# 6. 담당자별 데이터 (크롤링 vs 벌크 탭 분리)
 # ==========================================
 st.markdown("## 🔍 담당자별 데이터")
 
-for manager in TARGET_MANAGERS:
-    m_df = df[df['리스트업 담당자'] == manager]
-    st.markdown(f"### 👤 {manager}")
-    
+def render_deep_dive(f_df, m_df, team_total, manager, p_choice, task_name):
     if m_df.empty:
         c1, c2, c3 = st.columns(3)
-        c1.metric("기간 SKU", "-")
-        c2.metric("브랜드 수", "-")
-        c3.metric("팀 내 기여도", "-")
-        st.info("데이터가 아직 없습니다.")
-        st.markdown("---")
-        continue
-
-    p_choice = st.radio("범위 선택:", ["전체 누적", f"{target_month} 월간", f"{target_week} 주간", f"{selected_date} 일간"], horizontal=True, key=f"r_{manager}")
-    
-    f_df = m_df.copy()
-    team_total = 0
-    if "월간" in p_choice: 
-        f_df = m_df[m_df['Month'] == target_month]
-        team_total = df_month['SKU'].sum()
-    elif "주간" in p_choice: 
-        f_df = m_df[m_df['주차'] == target_week]
-        team_total = df_week['SKU'].sum()
-    elif "일간" in p_choice: 
-        f_df = m_df[m_df['등록 요청일자'].dt.date == selected_date]
-        team_total = df_day['SKU'].sum()
-    else: 
-        team_total = df['SKU'].sum()
+        for metric in ["기간 SKU", "브랜드 수", "팀 내 기여도"]: c1.metric(metric, "-") if metric == "기간 SKU" else c2.metric(metric, "-") if metric == "브랜드 수" else c3.metric(metric, "-")
+        st.info(f"누적된 {task_name} 데이터가 없습니다.")
+        return
 
     if f_df.empty:
         c1, c2, c3 = st.columns(3)
-        c1.metric("기간 SKU", "-")
-        c2.metric("브랜드 수", "-")
-        c3.metric("팀 내 기여도", "-")
-        st.info("데이터가 없습니다.")
-        st.markdown("---")
-        continue
+        for metric in ["기간 SKU", "브랜드 수", "팀 내 기여도"]: c1.metric(metric, "-") if metric == "기간 SKU" else c2.metric(metric, "-") if metric == "브랜드 수" else c3.metric(metric, "-")
+        st.info("선택하신 기간의 데이터가 없습니다.")
+        return
 
     contrib_str = f"{(f_df['SKU'].sum() / team_total * 100):.1f}%" if team_total > 0 else "0.0%"
 
@@ -246,15 +247,45 @@ for manager in TARGET_MANAGERS:
     with ch1:
         if "일간" not in p_choice:
             t_data = f_df.groupby('등록 요청일자')['SKU'].sum().reset_index()
-            fig = px.area(t_data, x='등록 요청일자', y='SKU', template='plotly_dark', title="처리 추이")
+            fig = px.area(t_data, x='등록 요청일자', y='SKU', template='plotly_dark', title=f"{task_name} 처리 추이")
             fig.update_traces(line_color=COLOR_MAP[manager], fillcolor=hex_to_rgba(COLOR_MAP[manager], 0.2))
             st.plotly_chart(fig, use_container_width=True)
     with ch2:
         b_data = f_df.groupby('브랜드')['SKU'].sum().reset_index().nlargest(5, 'SKU')
-        fig = px.pie(b_data, values='SKU', names='브랜드', hole=0.4, template='plotly_dark', title="탑 브랜드")
+        fig = px.pie(b_data, values='SKU', names='브랜드', hole=0.4, template='plotly_dark', title=f"{task_name} 탑 브랜드")
         st.plotly_chart(fig, use_container_width=True)
 
-    # 🌟 [최종 해결] 텍스트 버그 차단
-    with st.expander(f"📑 {manager} 상세 데이터 확인"):
+    with st.expander(f"📑 {manager} {task_name} 상세 로그"):
         st.dataframe(f_df.sort_values('등록 요청일자', ascending=False), use_container_width=True, hide_index=True)
+
+
+for manager in TARGET_MANAGERS:
+    st.markdown(f"### 👤 {manager}")
+    p_choice = st.radio("범위 선택:", ["전체 누적", f"{target_month} 월간", f"{target_week} 주간", f"{selected_date} 일간"], horizontal=True, key=f"r_{manager}")
+    
+    m_df_c = df_crawl[df_crawl['리스트업 담당자'] == manager]
+    m_df_b = df_bulk[df_bulk['리스트업 담당자'] == manager]
+    
+    f_df_c, f_df_b = m_df_c.copy(), m_df_b.copy()
+    team_tot_c, team_tot_b = 0, 0
+    
+    # 기간별 필터 로직
+    if "월간" in p_choice:
+        f_df_c, f_df_b = m_df_c[m_df_c['Month'] == target_month], m_df_b[m_df_b['Month'] == target_month]
+        team_tot_c, team_tot_b = df_month_c['SKU'].sum(), df_month_b['SKU'].sum()
+    elif "주간" in p_choice:
+        f_df_c, f_df_b = m_df_c[m_df_c['주차'] == target_week], m_df_b[m_df_b['주차'] == target_week]
+        team_tot_c, team_tot_b = df_week_c['SKU'].sum(), df_week_b['SKU'].sum()
+    elif "일간" in p_choice:
+        f_df_c, f_df_b = m_df_c[m_df_c['등록 요청일자'].dt.date == selected_date], m_df_b[m_df_b['등록 요청일자'].dt.date == selected_date]
+        team_tot_c, team_tot_b = df_day_c['SKU'].sum(), df_day_b['SKU'].sum()
+    else:
+        team_tot_c, team_tot_b = df_crawl['SKU'].sum(), df_bulk['SKU'].sum()
+
+    # 동일한 양식으로 두 작업을 탭으로 분리
+    tab_crawl, tab_bulk = st.tabs(["🔍 크롤링 작업", "📦 벌크 작업"])
+    
+    with tab_crawl: render_deep_dive(f_df_c, m_df_c, team_tot_c, manager, p_choice, "크롤링")
+    with tab_bulk: render_deep_dive(f_df_b, m_df_b, team_tot_b, manager, p_choice, "벌크작업")
+    
     st.markdown("---")
