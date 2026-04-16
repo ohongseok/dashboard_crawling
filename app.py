@@ -5,7 +5,7 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 페이지 설정 및 다크 테마 UI + 제작자 배지 CSS
+# 1. 페이지 설정 및 다크 테마 + 전용 폰트 고정
 # ==========================================
 st.set_page_config(page_title="운영 로그 대시보드 | KREAM Famous", page_icon="📊", layout="wide")
 
@@ -13,35 +13,16 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-    /* 폰트 및 배경 설정 */
+    /* 전체 폰트 설정 */
     html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, span, div, label {
         font-family: 'Inter', -apple-system, sans-serif !important;
     }
     .stApp { background-color: #0E1117; }
     
-    /* [NEW] 우측 상단 제작자 정보 배지 스타일 */
-    .author-badge {
-        position: absolute;
-        top: -60px;
-        right: 0px;
-        padding: 8px 15px;
-        background-color: #161B22;
-        border: 1px solid #30363D;
-        border-radius: 8px;
-        color: #A0A0A0;
-        font-size: 0.8rem;
-        font-weight: 500;
-        text-align: right;
-        line-height: 1.4;
-        z-index: 99;
-    }
-    .author-badge b { color: #00D4FF; }
-
     /* 데이터 값 색상 (Pure White) */
     [data-testid="stMetricValue"] { 
         color: #FFFFFF !important; 
         font-weight: 800 !important;
-        font-family: 'Inter', sans-serif !important;
     }
     
     [data-testid="stMetricLabel"] { 
@@ -49,22 +30,54 @@ st.markdown("""
         font-weight: 600 !important;
     }
     
-    h1, h2, h3, h4 { color: #FAFAFA !important; font-weight: 700 !important; }
+    /* 제목 및 텍스트 스타일 */
+    h1, h2, h3, h4 { color: #FAFAFA !important; font-weight: 700 !important; margin-bottom: 0.5rem !important; }
+    
+    /* 탭(Tabs) 디자인 */
     .stTabs [data-baseweb="tab"] { color: #A0A0A0; font-weight: 600; }
     .stTabs [aria-selected="true"] { color: #00D4FF !important; border-bottom: 2px solid #00D4FF !important; }
-    .stDataFrame { border: 1px solid #30363D; border-radius: 8px; }
-    .streamlit-expanderHeader { background-color: #161B22 !important; border: 1px solid #30363D !important; color: #FFFFFF !important; }
+
+    /* [수정] 상세 로그(Expander) 글자 겹침 방지 가이드 */
+    .streamlit-expanderHeader {
+        background-color: #161B22 !important;
+        border: 1px solid #30363D !important;
+        color: #FFFFFF !important;
+        padding-top: 0.5rem !important;
+        padding-bottom: 0.5rem !important;
+    }
+    
+    /* 제작자 정보 텍스트 스타일 */
+    .author-text {
+        text-align: right;
+        color: #A0A0A0;
+        font-size: 0.85rem;
+        line-height: 1.4;
+    }
+    .author-text b { color: #00D4FF; }
+
     hr { border-color: #30363D !important; }
     </style>
-    
-    <div class="author-badge">
-        Created & Maintained by <b>오홍석</b><br>
-        운영 및 유지보완 담당
-    </div>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 데이터 로드 및 5인 체제 전처리
+# 2. 상단 헤더 섹션 (제목 + 제작자 정보 안전 배치)
+# ==========================================
+header_left, header_right = st.columns([3, 1])
+
+with header_left:
+    st.title("📊 리스트업 운영 그룹 Dashboard")
+
+with header_right:
+    # 우측 상단에 홍석님의 정보를 안전하게 배치합니다.
+    st.markdown(f"""
+        <div class="author-text">
+            Created & Maintained by <b>오홍석</b><br>
+            운영 및 유지보완 담당
+        </div>
+    """, unsafe_allow_html=True)
+
+# ==========================================
+# 3. 데이터 로드 및 전처리
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
@@ -97,9 +110,8 @@ df = load_data(CSV_URL)
 if df.empty: st.stop()
 
 # ==========================================
-# 3. 최상단: 통합 성과
+# 4. 통합 성과
 # ==========================================
-st.title("📊 리스트업 운영 그룹 Dashboard")
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
 
@@ -126,14 +138,14 @@ def render_team_summary(target_df, label):
     with col1:
         fig_pie = px.pie(target_df.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
                          values='SKU', names='리스트업 담당자', hole=0.4, template='plotly_dark',
-                         color='리스트업 담당자', color_discrete_map=COLOR_MAP, title=f"{label} 인원별 기여도")
+                         color='리스트업 담당자', color_discrete_map=COLOR_MAP, title=f"{label} 기여도")
         st.plotly_chart(fig_pie, use_container_width=True)
     with col2:
         top_brands = target_df.groupby('브랜드')['SKU'].sum().nlargest(7).index
         top_df = target_df[target_df['브랜드'].isin(top_brands)]
         bar_data = top_df.groupby(['브랜드', '리스트업 담당자'])['SKU'].sum().reset_index()
         fig_bar = px.bar(bar_data, y='브랜드', x='SKU', color='리스트업 담당자', 
-                         orientation='h', template='plotly_dark', title=f"{label} 탑 브랜드 (인원별 컬러)",
+                         orientation='h', template='plotly_dark', title=f"{label} 탑 브랜드 (인원별)",
                          color_discrete_map=COLOR_MAP)
         fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, barmode='stack')
         st.plotly_chart(fig_bar, use_container_width=True)
@@ -145,7 +157,7 @@ with t_tab_d: render_team_summary(df_day, "일간")
 st.markdown("---")
 
 # ==========================================
-# 4. 인원별 실시간 트래커 (5인 체제)
+# 5. 5인 실시간 트래커
 # ==========================================
 st.markdown("### ⚡ 인원별 실시간 트래커")
 m_cols = st.columns(5)
@@ -173,7 +185,7 @@ for i, manager in enumerate(TARGET_MANAGERS):
 st.markdown("---")
 
 # ==========================================
-# 5. 담당자별 데이터 (Deep Dive)
+# 6. 담당자별 데이터 (Deep Dive)
 # ==========================================
 st.markdown("## 🔍 담당자별 데이터")
 
@@ -186,7 +198,7 @@ for manager in TARGET_MANAGERS:
         c1.metric("기간 SKU", "-")
         c2.metric("브랜드 수", "-")
         c3.metric("팀 내 기여도", "-")
-        st.info(f"{manager}님의 작업 데이터가 아직 없습니다.")
+        st.info(f"{manager}님의 데이터가 아직 없습니다.")
         st.markdown("---")
         continue
 
@@ -211,7 +223,7 @@ for manager in TARGET_MANAGERS:
         c1.metric("기간 SKU", "-")
         c2.metric("브랜드 수", "-")
         c3.metric("팀 내 기여도", "-")
-        st.info("선택하신 기간의 데이터가 없습니다.")
+        st.info("데이터가 없습니다.")
         st.markdown("---")
         continue
 
@@ -231,9 +243,10 @@ for manager in TARGET_MANAGERS:
             st.plotly_chart(fig, use_container_width=True)
     with ch2:
         b_data = f_df.groupby('브랜드')['SKU'].sum().reset_index().nlargest(5, 'SKU')
-        fig = px.pie(b_data, values='SKU', names='브랜드', hole=0.4, template='plotly_dark', title="탑 브랜드 Top 5")
+        fig = px.pie(b_data, values='SKU', names='브랜드', hole=0.4, template='plotly_dark', title="탑 브랜드")
         st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("📑 상세 로그 보기"):
+    # 🌟 [수정된 부분] 상세 데이터 로그 보기 (겹침 현상 해결을 위해 Padding 및 제목 조정)
+    with st.expander(f"📑 {manager} 상세 운영 데이터 확인하기"):
         st.dataframe(f_df.sort_values('등록 요청일자', ascending=False), use_container_width=True, hide_index=True)
     st.markdown("---")
