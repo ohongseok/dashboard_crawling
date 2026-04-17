@@ -7,7 +7,7 @@ import pytz
 # ==========================================
 # 1. 페이지 설정 및 다크 테마 고정 (비율 최적화 포함)
 # ==========================================
-st.set_page_config(page_title="운영 로그 대시보드 | KREAM Famous", page_icon="📊", layout="wide")
+st.set_page_config(page_title="1P OPS DASHBOARD", page_icon="📊", layout="wide")
 
 st.markdown("""
     <style>
@@ -18,7 +18,7 @@ st.markdown("""
     }
     .stApp { background-color: #0E1117; }
     
-    /* 🌟 [수정 1] 해상도 방어: 와이드 모니터에서 차트가 무한정 늘어나는 현상 방지 (최대 너비 1600px 고정 및 중앙 정렬) */
+    /* 해상도 방어: 와이드 모니터에서 차트가 무한정 늘어나는 현상 방지 */
     .block-container {
         max-width: 1600px !important;
         margin: 0 auto !important;
@@ -47,7 +47,7 @@ st.markdown("""
     
     .streamlit-expanderHeader svg { color: #FFFFFF !important; margin-right: 10px !important; }
 
-    /* 글로벌 토글 라디오 버튼 스타일링 (고급스럽게 박스 처리) */
+    /* 글로벌 토글 라디오 버튼 스타일링 */
     div[data-testid="stRadio"] > div {
         background-color: #161B22;
         padding: 10px 20px;
@@ -56,8 +56,15 @@ st.markdown("""
         display: inline-flex;
     }
 
+    /* 🌟 [수정] 제작자 텍스트 잘림 현상 방지 (margin-top 추가) */
     .author-text {
-        text-align: right; color: #FFFFFF !important; font-size: 0.85rem; line-height: 1.4; opacity: 0.9;
+        text-align: right; 
+        color: #FFFFFF !important; 
+        font-size: 0.85rem; 
+        line-height: 1.5; 
+        opacity: 0.9;
+        margin-top: 1.5rem; /* 위쪽 여백을 주어 천장으로 파고들어 잘리는 현상 방지 */
+        padding-right: 5px;
     }
     .author-text b { color: #FFFFFF !important; font-weight: 700; }
 
@@ -72,7 +79,8 @@ st.markdown("""
 # ==========================================
 header_left, header_right = st.columns([3, 1])
 with header_left:
-    st.title("📊 리스트업 운영 그룹 Dashboard")
+    # 🌟 [수정] 타이틀 변경
+    st.title("📊 1P OPS DASHBOARD")
 with header_right:
     st.markdown(f"""
         <div class="author-text">
@@ -147,7 +155,7 @@ df_crawl, df_bulk = load_data(CSV_URL)
 if df_crawl.empty and df_bulk.empty: st.stop()
 
 # ==========================================
-# 4. 통합 성과 (연간 누적 탭 추가)
+# 4. 통합 성과
 # ==========================================
 kst = pytz.timezone('Asia/Seoul')
 today_date = datetime.now(kst).date()
@@ -160,7 +168,6 @@ target_year = selected_date.year
 target_month = selected_date.strftime('%Y-%m')
 target_week = f"{selected_date.strftime('%y')}W{selected_date.isocalendar()[1]:02d}"
 
-# 필터 함수 (연도 필터 추가)
 def filter_by_date(df, date_obj, week_str, month_str, year_int):
     if df.empty:
         return df.copy(), df.copy(), df.copy(), df.copy()
@@ -174,7 +181,6 @@ df_week_c, df_month_c, df_day_c, df_year_c = filter_by_date(df_crawl, selected_d
 df_week_b, df_month_b, df_day_b, df_year_b = filter_by_date(df_bulk, selected_date, target_week, target_month, target_year)
 
 st.markdown("### 🏆 팀 통합 성과 (Team Performance)")
-# 🌟 [수정 3] 일간 데이터 다음에 '연간 누적' 탭 추가
 t_tab_w, t_tab_m, t_tab_d, t_tab_y = st.tabs([f"🎯 {target_week} 주차", f"📅 {target_month} 월간", f"⚡ {selected_date} 일간", f"🏆 {target_year}년 누적"])
 
 def render_team_summary(target_df_c, target_df_b, label):
@@ -192,7 +198,7 @@ def render_team_summary(target_df_c, target_df_b, label):
             fig_pie_c = px.pie(target_df_c.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
                              values='SKU', names='리스트업 담당자', hole=0.4, template='plotly_dark',
                              color='리스트업 담당자', color_discrete_map=COLOR_MAP, title=f"{label} 크롤링 기여도")
-            fig_pie_c.update_layout(height=350) # 차트 높이 고정 (해상도 비율 대응)
+            fig_pie_c.update_layout(height=350)
             st.plotly_chart(fig_pie_c, use_container_width=True)
         if not target_df_b.empty:
             fig_pie_b = px.pie(target_df_b.groupby('리스트업 담당자')['SKU'].sum().reset_index(), 
@@ -221,14 +227,13 @@ def render_team_summary(target_df_c, target_df_b, label):
 with t_tab_w: render_team_summary(df_week_c, df_week_b, "주간")
 with t_tab_m: render_team_summary(df_month_c, df_month_b, "월간")
 with t_tab_d: render_team_summary(df_day_c, df_day_b, "일간")
-with t_tab_y: render_team_summary(df_year_c, df_year_b, f"{target_year}년") # 추가된 연간 탭
+with t_tab_y: render_team_summary(df_year_c, df_year_b, f"{target_year}년")
 
 st.markdown("---")
 
 # ==========================================
-# 5. 인원별 실시간 트래커 (글로벌 토글 적용)
+# 5. 인원별 실시간 트래커
 # ==========================================
-# 🌟 [수정 4] 개별 탭 제거 후 전체 인원의 조회 기간을 한 번에 제어하는 글로벌 토글 버튼 추가
 st.markdown("### ⚡ 인원별 실시간 트래커")
 tracker_period = st.radio(
     "조회 기간 일괄 설정", 
@@ -241,10 +246,8 @@ m_cols = st.columns(5)
 
 for i, manager in enumerate(TARGET_MANAGERS):
     with m_cols[i]:
-        # 🌟 [수정 2] 이름 앞 이모티콘을 '👨‍💻' 하나로 통일
         st.markdown(f"#### 👨‍💻 {manager}")
         
-        # 선택된 토글에 맞춰 데이터 프레임 할당
         if tracker_period == "주간":
             df_cur_c, df_cur_b = df_week_c, df_week_b
         elif tracker_period == "월간":
@@ -316,7 +319,6 @@ def render_deep_dive(f_df, m_df, team_total, manager, p_choice, task_name):
 
 for manager in TARGET_MANAGERS:
     st.markdown(f"### 👨‍💻 {manager}")
-    # Deep dive에도 연간 누적 옵션으로 통일
     p_choice = st.radio("범위 선택:", [f"{target_year}년 누적", f"{target_month} 월간", f"{target_week} 주간", f"{selected_date} 일간"], horizontal=True, key=f"r_{manager}")
     
     m_df_c = df_crawl[df_crawl['리스트업 담당자'] == manager] if not df_crawl.empty else pd.DataFrame()
