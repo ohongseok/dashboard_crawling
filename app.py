@@ -56,14 +56,14 @@ st.markdown("""
         display: inline-flex;
     }
 
-    /* 🌟 [수정] 제작자 텍스트 잘림 현상 방지 (margin-top 추가) */
+    /* 제작자 텍스트 잘림 현상 방지 (margin-top 추가) */
     .author-text {
         text-align: right; 
         color: #FFFFFF !important; 
         font-size: 0.85rem; 
         line-height: 1.5; 
         opacity: 0.9;
-        margin-top: 1.5rem; /* 위쪽 여백을 주어 천장으로 파고들어 잘리는 현상 방지 */
+        margin-top: 1.5rem; 
         padding-right: 5px;
     }
     .author-text b { color: #FFFFFF !important; font-weight: 700; }
@@ -79,7 +79,6 @@ st.markdown("""
 # ==========================================
 header_left, header_right = st.columns([3, 1])
 with header_left:
-    # 🌟 [수정] 타이틀 변경
     st.title("📊 1P OPS DASHBOARD")
 with header_right:
     st.markdown(f"""
@@ -90,7 +89,7 @@ with header_right:
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. 데이터 로드 (Q~U열 매핑 및 방어 코드)
+# 3. 데이터 로드 (시트 확장 및 Q~U열 매핑 완벽 대응)
 # ==========================================
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
@@ -115,18 +114,25 @@ def load_data(url):
         except ValueError:
             df_raw = pd.read_csv(url, header=0)
 
-        # [1] 크롤링
+        # [1] 크롤링: 컬럼 이름 기반 추출 (시트에 열이 추가되어도 안전함)
         df_c = df_raw.copy()
-        df_c['등록 요청일자'] = pd.to_datetime(df_c['등록 요청일자'], errors='coerce')
-        df_c = df_c.dropna(subset=['등록 요청일자'])
-        df_c['Month'] = df_c['등록 요청일자'].dt.strftime('%Y-%m')
-        df_c['SKU'] = pd.to_numeric(df_c['SKU'], errors='coerce').fillna(0).astype(int)
-        df_c['리스트업 담당자'] = df_c['리스트업 담당자'].astype(str).str.strip()
-        df_c['주차'] = df_c['주차'].astype(str).str.strip()
-        df_crawl = df_c[df_c['리스트업 담당자'].isin(TARGET_MANAGERS)].copy()
+        if '등록 요청일자' in df_c.columns:
+            df_c['등록 요청일자'] = pd.to_datetime(df_c['등록 요청일자'], errors='coerce')
+            df_c = df_c.dropna(subset=['등록 요청일자'])
+            df_c['Month'] = df_c['등록 요청일자'].dt.strftime('%Y-%m')
+        if 'SKU' in df_c.columns:
+            df_c['SKU'] = pd.to_numeric(df_c['SKU'], errors='coerce').fillna(0).astype(int)
+        if '리스트업 담당자' in df_c.columns:
+            df_c['리스트업 담당자'] = df_c['리스트업 담당자'].astype(str).str.strip()
+        if '주차' in df_c.columns:
+            df_c['주차'] = df_c['주차'].astype(str).str.strip()
+            
+        # 필요한 담당자 필터링
+        df_crawl = df_c[df_c['리스트업 담당자'].isin(TARGET_MANAGERS)].copy() if '리스트업 담당자' in df_c.columns else pd.DataFrame()
 
-        # [2] 벌크
+        # [2] 벌크: Q~U열 (인덱스 16~20) 고정 매핑
         df_b_base = pd.DataFrame(columns=['주차', '등록 요청일자', '브랜드', 'SKU', '리스트업 담당자'])
+        # 크롤링 열이 추가되어도 16번째 인덱스부터는 벌크작업으로 안전하게 파싱
         if df_raw.shape[1] > 16:
             bulk_slice = df_raw.iloc[:, 16:21].copy()
             for i in range(5 - bulk_slice.shape[1]):
