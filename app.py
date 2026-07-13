@@ -341,18 +341,18 @@ with t_tab_y: render_team_summary(df_year_c, df_year_b, df_year_t, f"{target_yea
 st.markdown("---")
 
 st.sidebar.header("인원별 상세 분석")
-st.sidebar.caption("이름을 선택하면 해당 담당자의 작업 상세를 확인할 수 있습니다.")
-selected_manager = st.sidebar.radio(
-    "담당자 선택",
-    TARGET_MANAGERS,
-    index=0,
-    key="selected_manager"
-)
+st.sidebar.caption("이름을 선택하면 해당 담당자의 작업 상세가 아래에 추가됩니다.")
+selected_managers = [
+    manager
+    for manager in TARGET_MANAGERS
+    if st.sidebar.checkbox(manager, key=f"manager_selected_{manager}")
+]
 
 # ==========================================
 # 5. 담당자별 데이터 (Deep Dive)
 # ==========================================
-st.markdown("## 🔍 담당자별 데이터")
+if selected_managers:
+    st.markdown("## 🔍 담당자별 데이터")
 
 def render_manager_period_summary(manager_df, manager, period_column, period_label, caption, key_prefix):
     if manager_df.empty:
@@ -596,7 +596,7 @@ def render_deep_dive(f_df, m_df, team_total, manager, p_choice, task_name):
             hide_index=True
         )
 
-for manager in [selected_manager]:
+for manager in selected_managers:
     st.markdown(f"### 👨‍💻 {manager}")
     period_choice = st.radio(
         "조회 범위",
