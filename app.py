@@ -224,7 +224,20 @@ def raw_display_df(df):
     if df.empty:
         return pd.DataFrame(columns=RAW_DISPLAY_COLUMNS)
     visible_cols = [col for col in RAW_DISPLAY_COLUMNS if col in df.columns]
-    return df[visible_cols].copy()
+    display_df = df[visible_cols].copy()
+    if '등록 요청일자' in display_df.columns:
+        display_df['등록 요청일자'] = pd.to_datetime(
+            display_df['등록 요청일자'], errors='coerce'
+        ).dt.strftime('%Y-%m-%d')
+    return display_df
+
+def format_dates_for_display(df):
+    display_df = df.copy()
+    if '등록 요청일자' in display_df.columns:
+        display_df['등록 요청일자'] = pd.to_datetime(
+            display_df['등록 요청일자'], errors='coerce'
+        ).dt.strftime('%Y-%m-%d')
+    return display_df
 
 # ==========================================
 # 4. 통합 성과
@@ -593,9 +606,12 @@ def render_deep_dive(f_df, m_df, team_total, manager, p_choice, task_name):
     ch1, ch2 = st.columns(2)
     with ch1:
         if "일간" not in p_choice:
-            t_data = f_df.groupby('등록 요청일자')['SKU'].sum().reset_index()
-            fig = px.area(t_data, x='등록 요청일자', y='SKU', template='plotly_dark', title=f"{task_name} 처리 추이")
-            fig.update_layout(height=350)
+            t_data = f_df.groupby('등록 요청일자')['SKU'].sum().reset_index().sort_values('등록 요청일자')
+            t_data['날짜'] = t_data['등록 요청일자'].dt.strftime('%Y-%m-%d')
+            fig = px.area(t_data, x='날짜', y='SKU', template='plotly_dark', title=f"{task_name} 처리 추이")
+            fig.update_layout(height=350, xaxis_title='등록요청일자')
+            fig.update_xaxes(type='category')
+            fig.update_traces(hovertemplate='등록요청일자=%{x}<br>SKU=%{y}<extra></extra>')
             fig.update_traces(line_color=COLOR_MAP[manager], fillcolor=hex_to_rgba(COLOR_MAP[manager], 0.2))
             st.plotly_chart(fig, use_container_width=True)
     with ch2:
@@ -611,7 +627,11 @@ def render_deep_dive(f_df, m_df, team_total, manager, p_choice, task_name):
         st.markdown("**주차/브랜드별 요약**")
         st.dataframe(brand_detail, use_container_width=True, hide_index=True)
         st.markdown("**원본 로그**")
-        st.dataframe(f_df.sort_values('등록 요청일자', ascending=False), use_container_width=True, hide_index=True)
+        st.dataframe(
+            format_dates_for_display(f_df.sort_values('등록 요청일자', ascending=False)),
+            use_container_width=True,
+            hide_index=True
+        )
 
 for manager in TARGET_MANAGERS:
     st.markdown(f"### 👨‍💻 {manager}")
