@@ -430,33 +430,45 @@ def render_manager_period_summary(manager_df, manager, period_column, period_lab
     period_summary = period_summary[['기간', '브랜드 수', '크롤링', '벌크', '크롤링+벌크']]
 
     st.caption(caption)
-    period_chart_data = period_summary.melt(
-        id_vars='기간',
-        value_vars=['크롤링', '벌크'],
-        var_name='작업 구분',
-        value_name='SKU'
-    )
-    fig_period = px.bar(
-        period_chart_data,
-        x='기간',
-        y='SKU',
-        color='작업 구분',
-        barmode='group',
-        template='plotly_dark',
-        color_discrete_map={'크롤링': '#38BDF8', '벌크': '#F59E0B'},
-        title=f"{manager} {period_label} 작업 SKU"
-    )
-    fig_period.update_layout(height=360, legend_title_text='')
-    st.plotly_chart(fig_period, use_container_width=True)
-    st.dataframe(period_summary.rename(columns={'기간': period_label}), hide_index=True, use_container_width=True)
-
     period_options = period_summary['기간'].tolist()
-    selected_period = st.selectbox(
-        f"상세를 볼 {period_label}",
-        period_options,
-        index=len(period_options) - 1,
-        key=f"{key_prefix}_{manager}"
-    )
+    if len(period_options) > 1:
+        period_chart_data = period_summary.melt(
+            id_vars='기간',
+            value_vars=['크롤링', '벌크'],
+            var_name='작업 구분',
+            value_name='SKU'
+        )
+        fig_period = px.bar(
+            period_chart_data,
+            x='기간',
+            y='SKU',
+            color='작업 구분',
+            barmode='group',
+            template='plotly_dark',
+            color_discrete_map={'크롤링': '#38BDF8', '벌크': '#F59E0B'},
+            title=f"{manager} {period_label} 작업 SKU"
+        )
+        fig_period.update_layout(
+            height=320,
+            legend_title_text='',
+            bargap=0.55,
+            bargroupgap=0.12
+        )
+        fig_period.update_xaxes(type='category', title=period_label)
+        fig_period.update_traces(
+            width=0.36,
+            hovertemplate=f"{period_label}=%{{x}}<br>SKU=%{{y}}<extra></extra>"
+        )
+        st.plotly_chart(fig_period, use_container_width=True)
+        st.dataframe(period_summary.rename(columns={'기간': period_label}), hide_index=True, use_container_width=True)
+        selected_period = st.selectbox(
+            f"상세를 볼 {period_label}",
+            period_options,
+            index=len(period_options) - 1,
+            key=f"{key_prefix}_{manager}"
+        )
+    else:
+        selected_period = period_options[0]
     selected_period_df = period_df[period_df['기간'] == selected_period].copy()
     selected_period_summary = period_summary[period_summary['기간'] == selected_period].iloc[0]
 
@@ -722,3 +734,4 @@ for manager in TARGET_MANAGERS:
     with tab_b: render_deep_dive(cur_b, m_df_b, tot_b, manager, period_choice, "벌크")
     with tab_t: render_deep_dive(cur_t, m_df_t, tot_t, manager, period_choice, "크롤링+벌크")
     st.markdown("---")
+
