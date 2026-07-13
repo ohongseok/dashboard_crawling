@@ -220,6 +220,87 @@ def build_work_pivot(df, index_cols):
     pivot_df['크롤링+벌크'] = pivot_df['크롤링'] + pivot_df['벌크']
     return pivot_df[output_cols]
 
+def build_yearly_cumulative_summary(df, year, period_type):
+    year_short = str(year)[-2:]
+    if period_type == 'week':
+        last_week = int(pd.Timestamp(year=year, month=12, day=28).isocalendar().week)
+        periods = [f"{year_short}W{week:02d}" for week in range(1, last_week + 1)]
+        period_column = '기간'
+    else:
+        periods = [f"{year_short}M{month:02d}" for month in range(1, 13)]
+        period_column = '기간'
+
+    summary_df = pd.DataFrame({'기간': periods})
+    if not df.empty:
+        work_df = df.copy()
+        if period_type == 'week':
+            iso_week = work_df['등록 요청일자'].dt.isocalendar()
+            work_df['기간'] = iso_week.week.astype(int).map(lambda week: f"{year_short}W{week:02d}")
+            work_df.loc[iso_week.year > year, '기간'] = f"{year_short}W{last_week:02d}"
+            work_df.loc[iso_week.year < year, '기간'] = f"{year_short}W01"
+        else:
+            work_df['기간'] = work_df['등록 요청일자'].dt.strftime('%yM%m')
+        grouped_df = build_work_pivot(work_df, [period_column]).rename(columns={period_column: '기간'})
+        summary_df = summary_df.merge(grouped_df, on='기간', how='left')
+
+    for column in ['크롤링', '벌크', '크롤링+벌크']:
+        if column not in summary_df.columns:
+            summary_df[column] = 0
+        summary_df[column] = pd.to_numeric(summary_df[column], errors='coerce').fillna(0).astype(int)
+        summary_df[f'{column} 누적 SKU'] = summary_df[column].cumsum()
+    return summary_df
+
+def render_yearly_cumulative_summary(df, label, year):
+    st.markdown(f"#### {label} {year}년 누적 추이")
+    weekly_df = build_yearly_cumulative_summary(df, year, 'week')
+    monthly_df = build_yearly_cumulative_summary(df, year, 'month')
+
+    metric1, metric2, metric3 = st.columns(3)
+    metric1.metric("크롤링 최종 누적 SKU", f"{weekly_df['크롤링 누적 SKU'].iloc[-1]:,}")
+    metric2.metric("벌크 최종 누적 SKU", f"{weekly_df['벌크 누적 SKU'].iloc[-1]:,}")
+    metric3.metric("크롤링+벌크 최종 누적 SKU", f"{weekly_df['크롤링+벌크 누적 SKU'].iloc[-1]:,}")
+
+    weekly_tab, monthly_tab = st.tabs(["주차별 SKU", "월별 SKU"])
+    for tab, period_df, period_label in [
+        (weekly_tab, weekly_df, '주차'),
+        (monthly_tab, monthly_df, '월'),
+    ]:
+        with tab:
+            bar_df = period_df.melt(
+                id_vars='기간',
+                value_vars=['크롤링', '벌크'],
+                var_name='작업 구분',
+                value_name='SKU'
+            )
+            fig = px.bar(
+                bar_df,
+                x='기간',
+                y='SKU',
+                color='작업 구분',
+                barmode='group',
+                template='plotly_dark',
+                color_discrete_map={'크롤링': '#38BDF8', '벌크': '#F59E0B'},
+                title=f"{label} {period_label}별 SKU 및 크롤링+벌크 누적"
+            )
+            fig.add_scatter(
+                x=period_df['기간'],
+                y=period_df['크롤링+벌크 누적 SKU'],
+                mode='lines+markers',
+                name='크롤링+벌크 누적 SKU',
+                line={'color': '#A78BFA', 'width': 3},
+                yaxis='y2'
+            )
+            fig.update_layout(
+                height=360,
+                bargap=0.45,
+                legend_title_text='',
+                yaxis2={'title': '누적 SKU', 'overlaying': 'y', 'side': 'right', 'showgrid': False}
+            )
+            fig.update_xaxes(type='category', title=period_label)
+            fig.update_traces(hovertemplate='%{x}<br>SKU=%{y}<extra></extra>', selector={'type': 'bar'})
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(period_df, hide_index=True, use_container_width=True)
+
 def raw_display_df(df):
     if df.empty:
         return pd.DataFrame(columns=RAW_DISPLAY_COLUMNS)
@@ -336,7 +417,9 @@ def render_team_summary(target_df_c, target_df_b, target_df_total, label):
 with t_tab_w: render_team_summary(df_week_c, df_week_b, df_week_t, "주간")
 with t_tab_m: render_team_summary(df_month_c, df_month_b, df_month_t, "월간")
 with t_tab_d: render_team_summary(df_day_c, df_day_b, df_day_t, "일간")
-with t_tab_y: render_team_summary(df_year_c, df_year_b, df_year_t, f"{target_year}년")
+with t_tab_y:
+    render_team_summary(df_year_c, df_year_b, df_year_t, f"{target_year}년")
+    render_yearly_cumulative_summary(df_year_t, "팀 전체", target_year)
 
 st.markdown("---")
 
@@ -484,7 +567,7 @@ def render_manager_period_summary(manager_df, manager, period_column, period_lab
             use_container_width=True
         )
 
-def render_manager_cumulative_summary(manager_df, manager):
+def render_manager_cumulative_summary(manager_df, manager, year):
     if manager_df.empty:
         st.info(f"{manager} 담당자의 누적 작업 데이터가 없습니다.")
         return
@@ -496,6 +579,8 @@ def render_manager_cumulative_summary(manager_df, manager):
     metric2.metric("SKU 누적", f"{manager_df['SKU'].sum():,}개")
     metric3.metric("크롤링 SKU", f"{crawl_sku:,}개")
     metric4.metric("벌크 SKU", f"{bulk_sku:,}개")
+
+    render_yearly_cumulative_summary(manager_df, manager, year)
 
     brand_summary = build_work_pivot(manager_df, ['브랜드']).sort_values('크롤링+벌크', ascending=True)
     work_summary = manager_df.groupby('작업 구분')['SKU'].sum().reset_index()
@@ -672,12 +757,12 @@ for manager in selected_managers:
             'daily_detail'
         )
     else:
-        cur_c, cur_b, cur_t = manager_year_to_date_c, manager_year_to_date_b, manager_year_to_date
-        tot_c = team_year_to_date_c['SKU'].sum() if not team_year_to_date_c.empty else 0
-        tot_b = team_year_to_date_b['SKU'].sum() if not team_year_to_date_b.empty else 0
-        tot_t = team_year_to_date_t['SKU'].sum() if not team_year_to_date_t.empty else 0
-        st.caption(f"{target_year}년 1월 1일부터 {selected_date}까지의 누적 작업입니다.")
-        render_manager_cumulative_summary(manager_year_to_date, manager)
+        cur_c, cur_b, cur_t = f_year_c, f_year_b, f_year_t
+        tot_c = df_year_c['SKU'].sum() if not df_year_c.empty else 0
+        tot_b = df_year_b['SKU'].sum() if not df_year_b.empty else 0
+        tot_t = df_year_t['SKU'].sum() if not df_year_t.empty else 0
+        st.caption(f"{target_year}년 1월 1일부터 12월 31일까지의 전체 누적 작업입니다.")
+        render_manager_cumulative_summary(f_year_t, manager, target_year)
 
     st.markdown("#### 작업 유형별 상세")
     tab_c, tab_b, tab_t = st.tabs(["🔍 크롤링", "📦 벌크", "🔗 크롤링+벌크"])
