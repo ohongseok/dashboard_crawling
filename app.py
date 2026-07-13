@@ -92,7 +92,7 @@ with header_right:
 # ==========================================
 # 3. 데이터 로드 (시트 확장 및 Q~U열 매핑 완벽 대응)
 # ==========================================
-CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS7DmLGZwUTOY36vcC1aBgxsPwciNa5nYOYyODgCAPGWN_hR_LF-WXiYsHEdwa9uapI_M610WKtdF3S/pub?gid=808922108&single=true&output=csv"
+CSV_URL = "https://docs.google.com/spreadsheets/d/1EAd3NlieMsCmx44PmazLjNscUEYHWLkj8rhcahznsog/export?format=csv&gid=808922108"
 TARGET_MANAGERS = ['전현희', '유지윤', '손영우', '고희영', '오홍석']
 
 COLOR_MAP = {
@@ -109,11 +109,11 @@ def hex_to_rgba(hex_str, opacity=0.2):
 def load_data(url):
     try:
         try:
-            df_raw = pd.read_csv(url, header=1)
+            df_raw = pd.read_csv(url, header=1, low_memory=False)
             if '등록 요청일자' not in df_raw.columns and '리스트업 담당자' not in df_raw.columns:
-                df_raw = pd.read_csv(url, header=0)
+                df_raw = pd.read_csv(url, header=0, low_memory=False)
         except ValueError:
-            df_raw = pd.read_csv(url, header=0)
+            df_raw = pd.read_csv(url, header=0, low_memory=False)
 
         # [1] 크롤링: 컬럼 이름 기반 추출 (시트에 열이 추가되어도 안전함)
         df_c = df_raw.copy()
@@ -144,7 +144,7 @@ def load_data(url):
             df_b = df_b_base.copy()
 
         df_b['등록 요청일자'] = pd.to_datetime(df_b['등록 요청일자'], errors='coerce')
-        df_b = df_b.dropna(subset=['등록 요청일자'])
+        df_b = df_b.dropna(subset=['등록 요청일자']).copy()
         df_b['Month'] = df_b['등록 요청일자'].dt.strftime('%Y-%m')
         df_b['SKU'] = pd.to_numeric(df_b['SKU'], errors='coerce').fillna(0).astype(int)
         df_b['리스트업 담당자'] = df_b['리스트업 담당자'].astype(str).str.strip()
@@ -340,63 +340,14 @@ with t_tab_y: render_team_summary(df_year_c, df_year_b, df_year_t, f"{target_yea
 
 st.markdown("---")
 
-# ==========================================
-# 4. 인원별 실시간 트래커
-# ==========================================
-st.markdown("### ⚡ 인원별 실시간 트래커")
-tracker_period = st.radio(
-    "조회 기간 일괄 설정", 
-    ["주간", "월간", "일간", f"{target_year}년 누적"], 
-    horizontal=True,
-    label_visibility="collapsed"
+st.sidebar.header("인원별 상세 분석")
+st.sidebar.caption("이름을 선택하면 해당 담당자의 작업 상세를 확인할 수 있습니다.")
+selected_manager = st.sidebar.radio(
+    "담당자 선택",
+    TARGET_MANAGERS,
+    index=0,
+    key="selected_manager"
 )
-
-m_cols = st.columns(5)
-
-for i, manager in enumerate(TARGET_MANAGERS):
-    with m_cols[i]:
-        st.markdown(f"#### 👨‍💻 {manager}")
-        
-        if tracker_period == "주간":
-            df_cur_c, df_cur_b, df_cur_t = df_week_c, df_week_b, df_week_t
-        elif tracker_period == "월간":
-            df_cur_c, df_cur_b, df_cur_t = df_month_c, df_month_b, df_month_t
-        elif tracker_period == "일간":
-            df_cur_c, df_cur_b, df_cur_t = df_day_c, df_day_b, df_day_t
-        else:
-            df_cur_c, df_cur_b, df_cur_t = df_year_c, df_year_b, df_year_t
-            
-        c_data = df_cur_c[df_cur_c['리스트업 담당자'] == manager] if not df_cur_c.empty else pd.DataFrame()
-        b_data = df_cur_b[df_cur_b['리스트업 담당자'] == manager] if not df_cur_b.empty else pd.DataFrame()
-        t_data = df_cur_t[df_cur_t['리스트업 담당자'] == manager] if not df_cur_t.empty else pd.DataFrame()
-        
-        c_sum = c_data['SKU'].sum() if not c_data.empty else 0
-        b_sum = b_data['SKU'].sum() if not b_data.empty else 0
-        t_sum = t_data['SKU'].sum() if not t_data.empty else 0
-        
-        if c_sum == 0 and b_sum == 0 and t_sum == 0:
-            st.metric("🔍 크롤링", "-")
-            st.metric("📦 벌크", "-")
-            st.metric("🔗 크롤링+벌크", "-")
-            st.caption("내역 없음")
-            continue
-
-        st.metric("🔍 크롤링", f"{c_sum:,}" if c_sum > 0 else "-")
-        if c_sum > 0:
-            with st.expander("상세 보기"):
-                st.dataframe(c_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), hide_index=True, use_container_width=True)
-
-        st.metric("📦 벌크", f"{b_sum:,}" if b_sum > 0 else "-")
-        if b_sum > 0:
-            with st.expander("상세 보기"):
-                st.dataframe(b_data.groupby('브랜드')['SKU'].sum().reset_index().sort_values('SKU', ascending=False), hide_index=True, use_container_width=True)
-
-        st.metric("🔗 크롤링+벌크", f"{t_sum:,}" if t_sum > 0 else "-")
-        if t_sum > 0:
-            with st.expander("합산 상세 보기"):
-                st.dataframe(t_data.groupby(['브랜드', '작업 구분'])['SKU'].sum().reset_index().sort_values('SKU', ascending=False), hide_index=True, use_container_width=True)
-
-st.markdown("---")
 
 # ==========================================
 # 5. 담당자별 데이터 (Deep Dive)
@@ -645,7 +596,7 @@ def render_deep_dive(f_df, m_df, team_total, manager, p_choice, task_name):
             hide_index=True
         )
 
-for manager in TARGET_MANAGERS:
+for manager in [selected_manager]:
     st.markdown(f"### 👨‍💻 {manager}")
     period_choice = st.radio(
         "조회 범위",
@@ -734,4 +685,3 @@ for manager in TARGET_MANAGERS:
     with tab_b: render_deep_dive(cur_b, m_df_b, tot_b, manager, period_choice, "벌크")
     with tab_t: render_deep_dive(cur_t, m_df_t, tot_t, manager, period_choice, "크롤링+벌크")
     st.markdown("---")
-
