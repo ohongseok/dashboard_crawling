@@ -256,7 +256,7 @@ target_week = f"{selected_date.strftime('%y')}W{selected_date.isocalendar()[1]:0
 def filter_by_date(df, date_obj, week_str, month_str, year_int):
     if df.empty:
         return df.copy(), df.copy(), df.copy(), df.copy()
-    d_w = df[df['주차'] == week_str]
+    d_w = df[(df['주차'] == week_str) & (df['등록 요청일자'].dt.year == year_int)]
     d_m = df[df['Month'] == month_str]
     d_d = df[df['등록 요청일자'].dt.date == date_obj]
     d_y = df[df['등록 요청일자'].dt.year == year_int]
@@ -675,11 +675,11 @@ for manager in TARGET_MANAGERS:
         tot_b = df_month_b['SKU'].sum() if not df_month_b.empty else 0
         tot_t = df_month_t['SKU'].sum() if not df_month_t.empty else 0
         render_manager_period_summary(
-            manager_year_to_date,
+            f_month_t,
             manager,
             'Month',
             '월',
-            f"{target_year}년 1월부터 {target_month}까지의 누적 작업입니다.",
+            f"{target_month}의 작업입니다.",
             'monthly_detail'
         )
     elif "주간" in period_choice:
@@ -688,11 +688,11 @@ for manager in TARGET_MANAGERS:
         tot_b = df_week_b['SKU'].sum() if not df_week_b.empty else 0
         tot_t = df_week_t['SKU'].sum() if not df_week_t.empty else 0
         render_manager_period_summary(
-            manager_year_to_date,
+            f_week_t,
             manager,
             '주차',
             '주차',
-            f"{target_year}년 1주차부터 {target_week}까지의 누적 작업입니다.",
+            f"{target_week}의 작업입니다.",
             'weekly_detail'
         )
     elif "일간" in period_choice:
@@ -701,11 +701,11 @@ for manager in TARGET_MANAGERS:
         tot_b = df_day_b['SKU'].sum() if not df_day_b.empty else 0
         tot_t = df_day_t['SKU'].sum() if not df_day_t.empty else 0
         render_manager_period_summary(
-            manager_month_to_date,
+            f_day_t,
             manager,
             '등록 요청일자',
             '일자',
-            f"{target_month}의 일별 작업입니다.",
+            f"{selected_date}의 작업입니다.",
             'daily_detail'
         )
     else:
