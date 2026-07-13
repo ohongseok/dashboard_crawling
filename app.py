@@ -248,12 +248,16 @@ def build_yearly_cumulative_summary(df, year, period_type):
             summary_df[column] = 0
         summary_df[column] = pd.to_numeric(summary_df[column], errors='coerce').fillna(0).astype(int)
         summary_df[f'{column} 누적 SKU'] = summary_df[column].cumsum()
-    return summary_df
+    return summary_df[summary_df['크롤링+벌크'] > 0].copy()
 
 def render_yearly_cumulative_summary(df, label, year):
     st.markdown(f"#### {label} {year}년 누적 추이")
     weekly_df = build_yearly_cumulative_summary(df, year, 'week')
     monthly_df = build_yearly_cumulative_summary(df, year, 'month')
+
+    if weekly_df.empty or monthly_df.empty:
+        st.info(f"{label}의 {year}년 누적 작업 데이터가 없습니다.")
+        return
 
     metric1, metric2, metric3 = st.columns(3)
     metric1.metric("크롤링 최종 누적 SKU", f"{weekly_df['크롤링 누적 SKU'].iloc[-1]:,}")
@@ -300,6 +304,76 @@ def render_yearly_cumulative_summary(df, label, year):
             fig.update_traces(hovertemplate='%{x}<br>SKU=%{y}<extra></extra>', selector={'type': 'bar'})
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(period_df, hide_index=True, use_container_width=True)
+
+def format_yoy(current_value, previous_value):
+    if previous_value == 0:
+        return "-"
+    return f"{((current_value - previous_value) / previous_value) * 100:.1f}%"
+
+def build_yoy_summary(df, previous_year, current_year, comparison_type):
+    work_df = df[df['등록 요청일자'].dt.year.isin([previous_year, current_year])].copy()
+    if work_df.empty:
+        return pd.DataFrame()
+
+    if comparison_type == 'brand':
+        work_df['비교 기준'] = work_df['브랜드']
+    elif comparison_type == 'week':
+        work_df['비교 기준'] = work_df['등록 요청일자'].dt.isocalendar().week.astype(int).map(lambda week: f"W{week:02d}")
+    else:
+        work_df['비교 기준'] = work_df['등록 요청일자'].dt.strftime('M%m')
+    work_df['연도'] = work_df['등록 요청일자'].dt.year
+
+    pivot_df = build_work_pivot(work_df, ['비교 기준', '연도'])
+    previous_df = pivot_df[pivot_df['연도'] == previous_year].drop(columns='연도')
+    current_df = pivot_df[pivot_df['연도'] == current_year].drop(columns='연도')
+    previous_df = previous_df.rename(columns={column: f"{previous_year} {column}" for column in ['크롤링', '벌크', '크롤링+벌크']})
+    current_df = current_df.rename(columns={column: f"{current_year} {column}" for column in ['크롤링', '벌크', '크롤링+벌크']})
+    summary_df = previous_df.merge(current_df, on='비교 기준', how='outer').fillna(0)
+
+    for column in ['크롤링', '벌크', '크롤링+벌크']:
+        previous_column = f"{previous_year} {column}"
+        current_column = f"{current_year} {column}"
+        summary_df[previous_column] = summary_df[previous_column].astype(int)
+        summary_df[current_column] = summary_df[current_column].astype(int)
+        summary_df[f"{column} YoY"] = summary_df.apply(
+            lambda row: format_yoy(row[current_column], row[previous_column]), axis=1
+        )
+
+    if comparison_type == 'brand':
+        return summary_df.sort_values(f"{current_year} 크롤링+벌크", ascending=False)
+    summary_df['_sort_order'] = summary_df['비교 기준'].str.extract(r'(\d+)').astype(int)
+    return summary_df.sort_values('_sort_order').drop(columns='_sort_order')
+
+def render_yoy_summary(df, label, current_year):
+    available_years = sorted(df['등록 요청일자'].dropna().dt.year.unique().tolist()) if not df.empty else []
+    previous_years = [year for year in available_years if year < current_year]
+    if current_year not in available_years or not previous_years:
+        st.info(f"{label}의 {current_year}년 YoY 비교를 위한 이전 연도 데이터가 없습니다.")
+        return
+
+    previous_year = max(previous_years)
+    brand_df = build_yoy_summary(df, previous_year, current_year, 'brand')
+    weekly_df = build_yoy_summary(df, previous_year, current_year, 'week')
+    monthly_df = build_yoy_summary(df, previous_year, current_year, 'month')
+    if brand_df.empty:
+        st.info(f"{label}의 YoY 비교 데이터가 없습니다.")
+        return
+
+    st.markdown(f"#### {label} {previous_year}년 vs {current_year}년 YoY")
+    total_previous = brand_df[f"{previous_year} 크롤링+벌크"].sum()
+    total_current = brand_df[f"{current_year} 크롤링+벌크"].sum()
+    metric1, metric2, metric3 = st.columns(3)
+    metric1.metric(f"{previous_year}년 합산 SKU", f"{total_previous:,}")
+    metric2.metric(f"{current_year}년 합산 SKU", f"{total_current:,}")
+    metric3.metric("크롤링+벌크 YoY", format_yoy(total_current, total_previous))
+
+    brand_tab, weekly_tab, monthly_tab = st.tabs(["브랜드별 YoY", "주차별 YoY", "월별 YoY"])
+    with brand_tab:
+        st.dataframe(brand_df, hide_index=True, use_container_width=True)
+    with weekly_tab:
+        st.dataframe(weekly_df, hide_index=True, use_container_width=True)
+    with monthly_tab:
+        st.dataframe(monthly_df, hide_index=True, use_container_width=True)
 
 def raw_display_df(df):
     if df.empty:
@@ -420,6 +494,7 @@ with t_tab_d: render_team_summary(df_day_c, df_day_b, df_day_t, "일간")
 with t_tab_y:
     render_team_summary(df_year_c, df_year_b, df_year_t, f"{target_year}년")
     render_yearly_cumulative_summary(df_year_t, "팀 전체", target_year)
+    render_yoy_summary(df_total, "팀 전체", target_year)
 
 st.markdown("---")
 
@@ -763,6 +838,8 @@ for manager in selected_managers:
         tot_t = df_year_t['SKU'].sum() if not df_year_t.empty else 0
         st.caption(f"{target_year}년 1월 1일부터 12월 31일까지의 전체 누적 작업입니다.")
         render_manager_cumulative_summary(f_year_t, manager, target_year)
+        st.markdown("### 전년 대비 (YoY)")
+        render_yoy_summary(m_df_t, manager, target_year)
 
     st.markdown("#### 작업 유형별 상세")
     tab_c, tab_b, tab_t = st.tabs(["🔍 크롤링", "📦 벌크", "🔗 크롤링+벌크"])
