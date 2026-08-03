@@ -1,3 +1,4 @@
+import hmac
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -9,6 +10,46 @@ import pytz
 # 1. 페이지 설정 및 다크 테마 고정 (비율 최적화 포함)
 # ==========================================
 st.set_page_config(page_title="1P OPS DASHBOARD", page_icon="📊", layout="wide")
+
+def require_password():
+    """Render a password gate before loading any app data."""
+    if st.session_state.get("app_authenticated", False):
+        return
+
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"], [data-testid="stHeader"] {display: none;}
+        .block-container {max-width: 480px; padding-top: 18vh;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.title("🔒 비공개 앱")
+    st.caption("계속하려면 비밀번호를 입력하세요.")
+
+    with st.form("password_form", clear_on_submit=False):
+        password = st.text_input("비밀번호", type="password")
+        submitted = st.form_submit_button("접속", use_container_width=True)
+
+    if submitted:
+        try:
+            expected_password = str(st.secrets["APP_PASSWORD"])
+        except KeyError:
+            st.error("앱 비밀번호가 설정되지 않았습니다.")
+            st.stop()
+
+        if hmac.compare_digest(password, expected_password):
+            st.session_state["app_authenticated"] = True
+            st.rerun()
+        else:
+            st.error("비밀번호가 올바르지 않습니다.")
+
+    st.stop()
+
+
+require_password()
+
 
 st.markdown("""
     <style>
