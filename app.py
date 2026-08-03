@@ -39,7 +39,9 @@ def require_password():
             st.error("앱 비밀번호가 설정되지 않았습니다.")
             st.stop()
 
-        if hmac.compare_digest(\n            password.encode("utf-8"), expected_password.encode("utf-8")\n        ):
+        if hmac.compare_digest(
+            password.encode("utf-8"), expected_password.encode("utf-8")
+        ):
             st.session_state["app_authenticated"] = True
             st.rerun()
         else:
